@@ -4,6 +4,7 @@ from django.urls import reverse
 from tethys_sdk.routing import controller
 from tethys_sdk.gizmos import JobsTable
 from .common import docs_endpoint
+from django.contrib.auth import get_user_model
 
 
 @controller
@@ -70,9 +71,10 @@ def create_sample_jobs(request):
 
     def create_job(job_id, description, status, status_msg=None, workflow=False):
         Job = CondorWorkflow if workflow else BasicJob
+        user = get_user_model().objects.first()
         job = Job(
             name=f'job_{job_id}',
-            user=request.user,
+            user=user,
             description=description,
             label='gizmo_showcase',
             status_message=status_msg,

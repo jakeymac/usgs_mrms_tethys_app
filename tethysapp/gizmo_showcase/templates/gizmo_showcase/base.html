@@ -1,85 +1,30 @@
 {% extends "tethys_apps/app_base.html" %}
-
 {% load static %}
 
 {% block title %}{{ tethys_app.name }}{% endblock %}
 
 {% block app_icon %}
-  {# The path you provided in your app.py is accessible through the tethys_app.icon context variable #}
   <img src="{% if 'http' in tethys_app.icon %}{{ tethys_app.icon }}{% else %}{% static tethys_app.icon %}{% endif %}" />
 {% endblock %}
 
-{# The name you provided in your app.py is accessible through the tethys_app.name context variable #}
 {% block app_title %}{{ tethys_app.name }}{% endblock %}
 
 {% block app_navigation_items %}
   {% url 'gizmo_showcase:home' as home_url %}
-  {% url 'gizmo_showcase:buttons' as buttons_url %}
-  {% url 'gizmo_showcase:date_picker' as date_picker_url %}
-  {% url 'gizmo_showcase:range_slider' as range_slider_url %}
-  {% url 'gizmo_showcase:select_input' as select_input_url %}
-  {% url 'gizmo_showcase:text_input' as text_input_url %}
-  {% url 'gizmo_showcase:toggle_switch' as toggle_switch_url %}
-  {% url 'gizmo_showcase:table_view' as table_view_url %}
-  {% url 'gizmo_showcase:datatable_view' as datatable_view_url %}
-  {% url 'gizmo_showcase:plot_view_highcharts' as plot_view_hc_url %}
-  {% url 'gizmo_showcase:plot_view_d3' as plot_view_d3_url %}
-  {% url 'gizmo_showcase:plotly_view' as plotly_view_url %}
-  {% url 'gizmo_showcase:bokeh_view' as bokeh_view_url %}
-  {% url 'gizmo_showcase:map_view' as map_view_url %}
-  {% url 'gizmo_showcase:cesium_map_view_basic' as cesium_map_view_url %}
-  {% url 'gizmo_showcase:esri_map_view' as esri_map_view_url %}
-  {% url 'gizmo_showcase:jobs_table' as jobs_table_url %}
-  {% url 'gizmo_showcase:message_box' as message_box_url %}
-  {% url 'gizmo_showcase:slide_sheet' as slide_sheet_url %}
+  {% url 'gizmo_showcase:leaflet_mrms' as viewer_url %}
+
   <li class="nav-item title">Navigation</li>
-  <li class="nav-item"><a class="nav-link{% if request.path == home_url %} active{% endif %}" href="{{ home_url }}">Quick Start</a></li>
-  <li class="nav-item title">Form Controls</li>
-  <li class="nav-item"><a class="nav-link{% if request.path == buttons_url %} active{% endif %}" href="{{ buttons_url }}">Buttons</a></li>
-  <li class="nav-item"><a class="nav-link{% if request.path == date_picker_url %} active{% endif %}" href="{{ date_picker_url }}">Date Picker</a></li>
-  <li class="nav-item"><a class="nav-link{% if request.path == range_slider_url %} active{% endif %}" href="{{ range_slider_url }}">Range Slider</a></li>
-  <li class="nav-item"><a class="nav-link{% if request.path == select_input_url %} active{% endif %}" href="{{ select_input_url }}">Select Input</a></li>
-  <li class="nav-item"><a class="nav-link{% if request.path == text_input_url %} active{% endif %}" href="{{ text_input_url }}">Text Input</a></li>
-  <li class="nav-item"><a class="nav-link{% if request.path == toggle_switch_url %} active{% endif %}" href="{{ toggle_switch_url }}">Toggle Switch</a></li>
-  <li class="nav-item title">Tables</li>
-  <li class="nav-item"><a class="nav-link{% if request.path == table_view_url %} active{% endif %}" href="{{ table_view_url }}">Table View</a></li>
-  <li class="nav-item"><a class="nav-link{% if request.path == datatable_view_url %} active{% endif %}" href="{{ datatable_view_url }}">DataTable View</a></li>
-  <li class="nav-item title">Plots</li>
-  <li class="nav-item"><a class="nav-link{% if request.path == plot_view_hc_url %} active{% endif %}" href="{{ plot_view_hc_url }}">Plot View - Highcharts</a></li>
-  <li class="nav-item"><a class="nav-link{% if request.path == plot_view_d3_url %} active{% endif %}" href="{{ plot_view_d3_url }}">Plot View - D3</a></li>
-  <li class="nav-item"><a class="nav-link{% if request.path == plotly_view_url %} active{% endif %}" href="{{ plotly_view_url }}">Plotly View</a></li>
-  <li class="nav-item"><a class="nav-link{% if request.path == bokeh_view_url %} active{% endif %}" href="{{ bokeh_view_url }}">Bokeh View</a></li>
-  <li class="nav-item title">Maps</li>
-  <li class="nav-item"><a class="nav-link{% if request.path == map_view_url %} active{% endif %}" href="{{ map_view_url }}">Map View</a></li>
-  <li class="nav-item"><a class="nav-link{% if request.path == cesium_map_view_url %} active{% endif %}" href="{{ cesium_map_view_url }}">Cesium Map View</a></li>
-  <li class="nav-item"><a class="nav-link{% if request.path == esri_map_view_url %} active{% endif %}" href="{{ esri_map_view_url }}">ESRI Map View</a></li>
-  <li class="nav-item title">Processing</li>
-  <li class="nav-item"><a class="nav-link{% if request.path == jobs_table_url %} active{% endif %}" href="{{ jobs_table_url }}">Jobs Table</a></li>
-  <li class="nav-item title">Other</li>
-  <li class="nav-item"><a class="nav-link{% if request.path == message_box_url %} active{% endif %}" href="{{ message_box_url }}">Message Box</a></li>
-  <li class="nav-item"><a class="nav-link{% if request.path == slide_sheet_url %} active{% endif %}" href="{{ slide_sheet_url }}">Slide Sheet</a></li>
-
+  <li class="nav-item">
+    <a class="nav-link{% if request.path == home_url %} active{% endif %}" href="{{ home_url }}">
+      Home
+    </a>
+  </li>
+  <li class="nav-item">
+    <a class="nav-link{% if request.path == viewer_url %} active{% endif %}" href="{{ viewer_url }}">
+      USGS-MRMS-EVENTS
+    </a>
+  </li>
 {% endblock %}
 
-{% block app_content %}
-  <a class="btn btn-dark float-sm-end mb-2" href="{% block github_link %}{% endblock %}" target="_blank"><i class="bi bi-github me-2"></i>View on GitHub</a>
-{% endblock %}
-
-{% block app_actions %}
-{% endblock %}
-
-{% block content_dependent_styles %}
-  {{ block.super }}
-  <link href="{% static 'gizmo_showcase/vendor/prism/prism.min.css' %}" rel="stylesheet"/>
-  <link href="{% static 'gizmo_showcase/css/main.css' %}" rel="stylesheet"/>
-{% endblock %}
-
-{% block global_scripts %}
-  {{ block.super }}
-  <script src="{% static 'gizmo_showcase/vendor/prism/prism.min.js' %}" type="text/javascript"></script>
-{% endblock %}
-
-{% block scripts %}
-  {{ block.super }}
-  <script src="{% static 'gizmo_showcase/js/main.js' %}" type="text/javascript"></script>
-{% endblock %}
+{% block app_content %}{% endblock %}
+{% block app_actions %}{% endblock %}

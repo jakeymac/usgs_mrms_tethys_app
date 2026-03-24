@@ -9,3 +9,5 @@
 *.DS_Store
 .idea/
 services.yml
+.env
+json_data

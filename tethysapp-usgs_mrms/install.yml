@@ -17,6 +17,8 @@ requirements:
     - mercantile
     - xarray
     - zarr
+    - boto3
+    - python-dotenv
   pip:
 
   npm:

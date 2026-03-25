@@ -2,6 +2,7 @@ import os
 import json
 
 from tethys_sdk.routing import controller
+from tethys_sdk.layouts import MapLayout
 from tethys_sdk.gizmos import MapView, MVLayer
 from ..app import App
 from ..s3_utils import download_basin_geojson
@@ -10,7 +11,7 @@ from ..s3_utils import download_basin_geojson
 def home(request):
     return App.render(request, "home.html")
 
-def create_basin_layer(state):
+def create_basin_json(state):
     download_basin_geojson(state.upper())
 
     features = []
@@ -21,8 +22,9 @@ def create_basin_layer(state):
             filepath = os.path.join(folder_path, filename)
 
             with open(filepath, "r") as f:
+                data = json.load(f)
                 features.append(
-                    {"type": "Feature", "geometry": json.load(f)["geometry"]}
+                    {"type": "Feature", "geometry": data["geometry"], "properties": data["properties"]}
                 )
 
     geojson_object = {
@@ -36,31 +38,73 @@ def create_basin_layer(state):
         "features": features,
     }
 
-    basin_layer = MVLayer(
-        source="GeoJSON",
-        options=geojson_object,
-        legend_title=f"{state} Basins",
-    )
+    return geojson_object
 
-    return basin_layer
+@controller(name="state_basin", url="basin/{state}/")
+class StateBasinMapLayout(MapLayout):
+    app = App
+    base_template = 'usgs_mrms/base.html'
+    map_title = f'My Map Layout for state'
+    map_subtitle = 'Subtitle'
+    basemaps = [
+        'OpenStreetMap',
+        'ESRI'
+    ]
 
-@controller(name="state_basin", url="basin/{state}")
-def state_basin(request, state):
-    state = state.capitalize()
-    basin_layer = create_basin_layer(state)
+    show_properties_popup = True
+
+    def compose_layers(self, request, map_view, *args, **kwargs):
+        state = kwargs.get("state").capitalize()
+        basin_geojson = create_basin_json(state)
+        basin_layer = self.build_geojson_layer(
+            basin_geojson, 
+            layer_name=f"basins",
+            layer_title=f"{state} Basins",
+            layer_variable='basins',
+            visible=True,
+            selectable=True,
+            plottable=True,
+        )
+
+        map_view.layers.append(basin_layer)
+
+        # Add layer to layer group
+        layer_groups = [
+            self.build_layer_group(
+                id='basins-layer-group',
+                display_name='Basins',
+                layer_control='radio',  # 'radio' or 'check'
+                layers=[
+                    basin_layer,
+                ],
+            ),
+        ]
+
+        return layer_groups
     
+@controller(name="zarr_viewer", url="basin/{state}/{gage_id}")
+def view_zarr_page(request, state, gage_id):
+    return App.render(request, "zarr_viewer.html", {"state": state, "gage_id": gage_id})
 
-    map_view = MapView(
-        height="500px",
-        width="100%",
-        controls=["ZoomControl", "ScaleControl"],
-        basemap="OpenStreetMap",
-        layers=[basin_layer],
-    )
 
-    context = {
-        "state": state,
-        "map_view": map_view,
-    }
+# def state_basin(request, state):
+#     state = state.capitalize()
+#     print("Before creating basin layer...")
+#     basin_layer = create_basin_layer(state)
+#     print("After creating basin layer...")
 
-    return App.render(request, "state_basin.html", context)
+#     map_view = MapView(
+#         height="500px",
+#         width="100%",
+#         controls=["ZoomControl", "ScaleControl"],
+#         basemap="OpenStreetMap",
+#         layers=[basin_layer],
+#     )
+
+#     print("Building context...")
+#     context = {
+#         "state": state,
+#         "map_view": map_view,
+#     }
+
+#     return App.render(request, "state_basin.html", context)

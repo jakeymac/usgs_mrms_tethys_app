@@ -5,7 +5,8 @@ from tethys_sdk.routing import controller
 from tethys_sdk.layouts import MapLayout
 from tethys_sdk.gizmos import MapView, MVLayer
 from ..app import App
-from ..s3_utils import download_basin_geojson
+from ..s3_utils import download_basin_geojson, download_zarr_file
+from ..mrms_tiles import get_mrms_meta
 
 @controller(name="home")
 def home(request):
@@ -16,8 +17,7 @@ def create_basin_json(state):
     download_basin_geojson(state.upper(), app_media_path)
 
     features = []
-    BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-    folder_path = os.path.join(BASE_DIR, "..", "json_data", state.upper())
+    folder_path = os.path.join(app_media_path, "basin_json", state.upper())
     for filename in os.listdir(folder_path):
         if filename.endswith(".json"):
             filepath = os.path.join(folder_path, filename)
@@ -83,10 +83,42 @@ class StateBasinMapLayout(MapLayout):
 
         return layer_groups
     
-@controller(name="zarr_viewer", url="basin/{state}/{gage_id}")
-def view_zarr_page(request, state, gage_id):
-    return App.render(request, "zarr_viewer.html", {"state": state, "gage_id": gage_id})
+@controller(
+    name="zarr_viewer",
+    url="basin/{state}/{gage_id}",
+    login_required=False,
+)
+def leaflet_mrms(request, state, gage_id):
+    download_zarr_file(state.upper(), gage_id, App.get_app_media().path)
+    meta = get_mrms_meta(gage_id)
 
+    valid_time_indices = meta["valid_time_indices"]
+    valid_times_iso = meta["valid_times_iso"]
+    valid_count = len(valid_time_indices)
+
+    slider_t0 = valid_count // 2 if valid_count else 0
+    slider_max = max(valid_count - 1, 0)
+
+    context = {
+        "tile_url_template": f"/apps/usgs-mrms/mrms/tiles/{gage_id}/{{t}}/{{z}}/{{x}}/{{y}}",
+        "value_url": f"/apps/usgs-mrms/mrms/value_at/{gage_id}",
+        "max_pixel_url": f"/apps/usgs-mrms/mrms/max_pixel/{gage_id}",
+        "recurrence_tile_url_template": f"/apps/usgs-mrms/mrms/recurrence/tiles/{gage_id}/{{z}}/{{x}}/{{y}}",
+        "recurrence_value_url": f"/apps/usgs-mrms/mrms/recurrence/value_at/{gage_id}",
+        "slider_t0": slider_t0,
+        "slider_max": slider_max,
+        "valid_time_indices_json": json.dumps(valid_time_indices),
+        "valid_times_iso_json": json.dumps(valid_times_iso),
+        "west": meta["west"],
+        "south": meta["south"],
+        "east": meta["east"],
+        "north": meta["north"],
+        "recurrence_max_count": meta["recurrence_max_count"],
+        "n_valid_times": meta["n_valid_times"],
+        "gage_id": gage_id,
+    }
+
+    return App.render(request, "leaflet_mrms.html", context)
 
 # def state_basin(request, state):
 #     state = state.capitalize()

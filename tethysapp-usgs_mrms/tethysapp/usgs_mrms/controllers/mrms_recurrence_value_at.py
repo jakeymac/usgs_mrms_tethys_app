@@ -6,10 +6,10 @@ from ..mrms_tiles import recurrence_at_latlon
 
 @controller(
     name="mrms_recurrence_value_at",
-    url="/mrms/recurrence/value_at",
+    url="/mrms/recurrence/value_at/{gage_id}",
     login_required=False,
 )
-def mrms_recurrence_value_at(request):
+def mrms_recurrence_value_at(request, gage_id):
     try:
         lon = float(request.GET["lon"])
         lat = float(request.GET["lat"])
@@ -19,7 +19,7 @@ def mrms_recurrence_value_at(request):
             status=400,
         )
 
-    count = recurrence_at_latlon(lon=lon, lat=lat)
+    count = recurrence_at_latlon(lon=lon, lat=lat, gage_id=gage_id)
 
     return JsonResponse(
         {

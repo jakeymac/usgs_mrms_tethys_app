@@ -59,10 +59,9 @@ _NORTH: float | None = None
 _TRANSPARENT_TILE_BYTES: bytes | None = None
 _MAX_CACHE: OrderedDict[int, tuple[float | None, float | None, float | None]] = OrderedDict()
 
-def get_zarr_path():
-    app_workspace_path = App.get_app_workspace().path
-    DEFAULT_ZARR_PATH = os.path.join(app_workspace_path, "unifed", "mrms_single_basin_stable.zarr")
-    ZARR_PATH = os.environ.get("MRMS_ZARR_PATH", DEFAULT_ZARR_PATH)
+def get_zarr_path(gage_id: str) -> Path:
+    app_media_path = App.get_app_media().path
+    ZARR_PATH = os.path.join(app_media_path, "zarr_files", f"{gage_id}.zarr")
     return Path(ZARR_PATH)
 
 def _build_transparent_tile() -> bytes:
@@ -97,7 +96,7 @@ def _dilate_grid(grid: np.ndarray) -> np.ndarray:
     return dilated
 
 
-def _init_once() -> None:
+def _init_once(gage_id: str) -> None:
     global _DS, _RAIN, _LON_FLAT, _LAT_FLAT, _TIMES_ISO, _NT
     global _VALID_TIME_INDICES, _VALID_TIMES_ISO
     global _WEST, _EAST, _SOUTH, _NORTH, _TRANSPARENT_TILE_BYTES
@@ -108,8 +107,7 @@ def _init_once() -> None:
     with _INIT_LOCK:
         if _DS is not None:
             return
-
-        zarr_path = get_zarr_path()
+        zarr_path = get_zarr_path(gage_id)
         if not zarr_path.exists():
             raise FileNotFoundError(f"MRMS Zarr not found: {zarr_path}")
 
@@ -172,13 +170,13 @@ def _init_once() -> None:
         _TRANSPARENT_TILE_BYTES = _build_transparent_tile()
 
 
-def _transparent_png_bytes() -> bytes:
-    _init_once()
+def _transparent_png_bytes(gage_id: str) -> bytes:
+    _init_once(gage_id)
     return _TRANSPARENT_TILE_BYTES  # type: ignore[return-value]
 
 
-def _rain_time_to_1d(time_index: int) -> np.ndarray:
-    _init_once()
+def _rain_time_to_1d(time_index: int, gage_id: str) -> np.ndarray:
+    _init_once(gage_id)
 
     array_1d = np.asarray(_RAIN.isel(time=time_index).values, dtype=np.float32).reshape(-1)
     expected_size = _LON_FLAT.size  # type: ignore[union-attr]
@@ -197,8 +195,9 @@ def _render_flat_values_to_tile(
     z: int,
     x: int,
     y: int,
+    gage_id: str,
 ) -> bytes:
-    _init_once()
+    _init_once(gage_id)
 
     bounds = mercantile.bounds(x, y, z)
     west, south, east, north = bounds.west, bounds.south, bounds.east, bounds.north
@@ -208,11 +207,11 @@ def _render_flat_values_to_tile(
 
     spatial_mask = (lon >= west) & (lon <= east) & (lat >= south) & (lat <= north)
     if not spatial_mask.any():
-        return _transparent_png_bytes()
+        return _transparent_png_bytes(gage_id)
 
     valid_mask = spatial_mask & np.isfinite(values_1d) & (values_1d > 0)
     if not valid_mask.any():
-        return _transparent_png_bytes()
+        return _transparent_png_bytes(gage_id)
 
     lon_t = lon[valid_mask]
     lat_t = lat[valid_mask]
@@ -245,8 +244,8 @@ def _render_flat_values_to_tile(
     return buffer.getvalue()
 
 
-def _compute_recurrence_counts() -> tuple[np.ndarray, int]:
-    _init_once()
+def _compute_recurrence_counts(gage_id: str) -> tuple[np.ndarray, int]:
+    _init_once(gage_id)
 
     valid_time_indices = _VALID_TIME_INDICES
     pixel_count = _LON_FLAT.size  # type: ignore[union-attr]
@@ -269,32 +268,32 @@ def _compute_recurrence_counts() -> tuple[np.ndarray, int]:
     return counts, max_count
 
 
-def _get_recurrence_counts() -> np.ndarray:
+def _get_recurrence_counts(gage_id: str) -> np.ndarray:
     global _RECURRENCE_COUNTS, _RECURRENCE_MAX_COUNT
 
-    _init_once()
+    _init_once(gage_id)
     if _RECURRENCE_COUNTS is not None:
         return _RECURRENCE_COUNTS
 
     with _RECURRENCE_LOCK:
         if _RECURRENCE_COUNTS is None:
-            counts, max_count = _compute_recurrence_counts()
+            counts, max_count = _compute_recurrence_counts(gage_id)
             _RECURRENCE_COUNTS = counts
             _RECURRENCE_MAX_COUNT = max_count
 
     return _RECURRENCE_COUNTS
 
 
-def get_mrms_meta() -> dict[str, object]:
-    _init_once()
-    recurrence_counts = _get_recurrence_counts()
+def get_mrms_meta(gage_id) -> dict[str, object]:
+    _init_once(gage_id)
+    recurrence_counts = _get_recurrence_counts(gage_id)
 
     return {
         "nt": int(_NT),
         "times_iso": _TIMES_ISO,
         "valid_time_indices": _VALID_TIME_INDICES.tolist(),
         "valid_times_iso": _VALID_TIMES_ISO,
-        "zarr_path": get_zarr_path(),
+        "zarr_path": get_zarr_path(gage_id),
         "n_pixels": int(_LON_FLAT.size),
         "west": _WEST,
         "east": _EAST,
@@ -305,28 +304,28 @@ def get_mrms_meta() -> dict[str, object]:
     }
 
 
-def render_tile_png(time_index: int, z: int, x: int, y: int) -> bytes:
-    _init_once()
+def render_tile_png(time_index: int, z: int, x: int, y: int, gage_id: str) -> bytes:
+    _init_once(gage_id)
 
     if time_index < 0 or time_index >= int(_NT):
-        return _transparent_png_bytes()
+        return _transparent_png_bytes(gage_id)
 
-    values_1d = _rain_time_to_1d(time_index)
-    return _render_flat_values_to_tile(values_1d=values_1d, bins=RAIN_BINS, z=z, x=x, y=y)
-
-
-def render_recurrence_tile_png(z: int, x: int, y: int) -> bytes:
-    counts = _get_recurrence_counts().astype(np.float32, copy=False)
-    return _render_flat_values_to_tile(values_1d=counts, bins=RECURRENCE_BINS, z=z, x=x, y=y)
+    values_1d = _rain_time_to_1d(time_index, gage_id)
+    return _render_flat_values_to_tile(values_1d=values_1d, bins=RAIN_BINS, z=z, x=x, y=y, gage_id=gage_id)
 
 
-def value_at_latlon(time_index: int, lon: float, lat: float) -> float | None:
-    _init_once()
+def render_recurrence_tile_png(z: int, x: int, y: int, gage_id: str) -> bytes:
+    counts = _get_recurrence_counts(gage_id).astype(np.float32, copy=False)
+    return _render_flat_values_to_tile(values_1d=counts, bins=RECURRENCE_BINS, z=z, x=x, y=y, gage_id=gage_id)
+
+
+def value_at_latlon(time_index: int, lon: float, lat: float, gage_id: str) -> float | None:
+    _init_once(gage_id)
 
     if time_index < 0 or time_index >= int(_NT):
         return None
 
-    values_1d = _rain_time_to_1d(time_index)
+    values_1d = _rain_time_to_1d(time_index, gage_id)
     dx = _LON_FLAT - float(lon)
     dy = _LAT_FLAT - float(lat)
     nearest_index = int(np.argmin(dx * dx + dy * dy))
@@ -335,18 +334,18 @@ def value_at_latlon(time_index: int, lon: float, lat: float) -> float | None:
     return float(value) if np.isfinite(value) else None
 
 
-def recurrence_at_latlon(lon: float, lat: float) -> int:
-    _init_once()
+def recurrence_at_latlon(lon: float, lat: float, gage_id: str) -> int:
+    _init_once(gage_id)
 
-    counts = _get_recurrence_counts()
+    counts = _get_recurrence_counts(gage_id)
     dx = _LON_FLAT - float(lon)
     dy = _LAT_FLAT - float(lat)
     nearest_index = int(np.argmin(dx * dx + dy * dy))
     return int(counts[nearest_index])
 
 
-def max_pixel_at_time(time_index: int) -> tuple[float | None, float | None, float | None]:
-    _init_once()
+def max_pixel_at_time(time_index: int, gage_id: str) -> tuple[float | None, float | None, float | None]:
+    _init_once(gage_id)
 
     ti = int(time_index)
     if ti < 0 or ti >= int(_NT):
@@ -357,7 +356,7 @@ def max_pixel_at_time(time_index: int) -> tuple[float | None, float | None, floa
         _MAX_CACHE.move_to_end(ti)
         return cached
 
-    values_1d = _rain_time_to_1d(ti)
+    values_1d = _rain_time_to_1d(ti, gage_id)
     valid = np.isfinite(values_1d) & (values_1d > 0)
 
     if valid.any():

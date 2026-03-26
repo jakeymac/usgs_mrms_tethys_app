@@ -12,7 +12,8 @@ def home(request):
     return App.render(request, "home.html")
 
 def create_basin_json(state):
-    download_basin_geojson(state.upper())
+    app_media_path = App.get_app_media().path
+    download_basin_geojson(state.upper(), app_media_path)
 
     features = []
     BASE_DIR = os.path.dirname(os.path.abspath(__file__))

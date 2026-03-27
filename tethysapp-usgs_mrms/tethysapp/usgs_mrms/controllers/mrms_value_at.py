@@ -6,11 +6,11 @@ from ..mrms_tiles import get_mrms_meta, value_at_latlon
 
 @controller(
     name="mrms_value_at",
-    url="/mrms/value_at",
+    url="/mrms/value_at/{gage_id}",
     login_required=False,
 )
-def mrms_value_at(request):
-    meta = get_mrms_meta()
+def mrms_value_at(request, gage_id):
+    meta = get_mrms_meta(gage_id)
     nt = int(meta["nt"])
 
     try:
@@ -24,7 +24,7 @@ def mrms_value_at(request):
         )
 
     t = min(max(t, 0), nt - 1)
-    value = value_at_latlon(time_index=t, lon=lon, lat=lat)
+    value = value_at_latlon(time_index=t, lon=lon, lat=lat, gage_id=gage_id)
 
     return JsonResponse(
         {

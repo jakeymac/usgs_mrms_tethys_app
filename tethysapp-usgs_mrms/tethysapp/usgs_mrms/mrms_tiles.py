@@ -38,6 +38,12 @@ COLORS_RGBA = np.array(
 _INIT_LOCK = threading.Lock()
 _RECURRENCE_LOCK = threading.Lock()
 
+MAX_GAGE_CACHE = 5
+
+_GAGE_CACHE: OrderedDict[str, dict] = OrderedDict()
+_GAGE_LOCKS: dict[str, threading.Lock] = {}
+_GAGE_LOCKS_LOCK = threading.Lock()
+
 _DS: xr.Dataset | None = None
 _RAIN = None
 _LON_FLAT: np.ndarray | None = None
@@ -95,18 +101,23 @@ def _dilate_grid(grid: np.ndarray) -> np.ndarray:
     dilated[:, -1] = -1
     return dilated
 
+def _get_gage_lock(gage_id: str) -> threading.Lock:
+    if gage_id not in _GAGE_LOCKS:
+        with _GAGE_LOCKS_LOCK:
+            if gage_id not in _GAGE_LOCKS:
+                _GAGE_LOCKS[gage_id] = threading.Lock()
+    return _GAGE_LOCKS[gage_id]
+
 
 def _init_once(gage_id: str) -> None:
-    global _DS, _RAIN, _LON_FLAT, _LAT_FLAT, _TIMES_ISO, _NT
-    global _VALID_TIME_INDICES, _VALID_TIMES_ISO
-    global _WEST, _EAST, _SOUTH, _NORTH, _TRANSPARENT_TILE_BYTES
-
-    if _DS is not None:
+    if gage_id in _GAGE_CACHE:
+        _GAGE_CACHE.move_to_end(gage_id)
         return
-
-    with _INIT_LOCK:
-        if _DS is not None:
+    
+    with _get_gage_lock(gage_id):
+        if gage_id in _GAGE_CACHE:
             return
+
         zarr_path = get_zarr_path(gage_id)
         if not zarr_path.exists():
             raise FileNotFoundError(f"MRMS Zarr not found: {zarr_path}")
@@ -152,34 +163,41 @@ def _init_once(gage_id: str) -> None:
         else:
             west = east = south = north = None
 
-        _DS = dataset
-        _RAIN = rain
-        _LON_FLAT = lon_flat
-        _LAT_FLAT = lat_flat
-        _TIMES_ISO = times_iso
-        _NT = nt
 
-        _VALID_TIME_INDICES = valid_time_indices
-        _VALID_TIMES_ISO = valid_times_iso
+        _GAGE_CACHE[gage_id] = {
+            "dataset": dataset,
+            "rain": rain,
+            "lon_flat": lon_flat,
+            "lat_flat": lat_flat,
+            "times_iso": times_iso,
+            "nt": nt,
+            "valid_time_indices": valid_time_indices,
+            "valid_times_iso": valid_times_iso,
+            "west": west,
+            "east": east,
+            "south": south,
+            "north": north,
+            "transparent_tile_bytes": _build_transparent_tile(),
+            "max_pixel_cache": OrderedDict()
+        }
 
-        _WEST = west
-        _EAST = east
-        _SOUTH = south
-        _NORTH = north
-
-        _TRANSPARENT_TILE_BYTES = _build_transparent_tile()
-
+        _GAGE_CACHE.move_to_end(gage_id)
+        if len(_GAGE_CACHE) > MAX_GAGE_CACHE:
+            _ , evicted = _GAGE_CACHE.popitem(last=False)
+            evicted["dataset"].close()
 
 def _transparent_png_bytes(gage_id: str) -> bytes:
     _init_once(gage_id)
-    return _TRANSPARENT_TILE_BYTES  # type: ignore[return-value]
+    return _GAGE_CACHE[gage_id]["transparent_tile_bytes"]  # type: ignore[return-value]
 
 
 def _rain_time_to_1d(time_index: int, gage_id: str) -> np.ndarray:
     _init_once(gage_id)
-
-    array_1d = np.asarray(_RAIN.isel(time=time_index).values, dtype=np.float32).reshape(-1)
-    expected_size = _LON_FLAT.size  # type: ignore[union-attr]
+    RAIN = _GAGE_CACHE[gage_id]["rain"]
+    array_1d = np.asarray(RAIN.isel(time=time_index).values, dtype=np.float32).reshape(-1)
+    
+    LON_FLAT = _GAGE_CACHE[gage_id]["lon_flat"]
+    expected_size = LON_FLAT.size  # type: ignore[union-attr]
 
     if array_1d.size != expected_size:
         raise ValueError(
@@ -202,8 +220,8 @@ def _render_flat_values_to_tile(
     bounds = mercantile.bounds(x, y, z)
     west, south, east, north = bounds.west, bounds.south, bounds.east, bounds.north
 
-    lon = _LON_FLAT
-    lat = _LAT_FLAT
+    lon = _GAGE_CACHE[gage_id]["lon_flat"]
+    lat = _GAGE_CACHE[gage_id]["lat_flat"]
 
     spatial_mask = (lon >= west) & (lon <= east) & (lat >= south) & (lat <= north)
     if not spatial_mask.any():
@@ -247,15 +265,17 @@ def _render_flat_values_to_tile(
 def _compute_recurrence_counts(gage_id: str) -> tuple[np.ndarray, int]:
     _init_once(gage_id)
 
-    valid_time_indices = _VALID_TIME_INDICES
-    pixel_count = _LON_FLAT.size  # type: ignore[union-attr]
+    gage_cache = _GAGE_CACHE[gage_id]
+    valid_time_indices = gage_cache["valid_time_indices"]
+    
+    pixel_count = gage_cache["lon_flat"].size  # type: ignore[union-attr]
 
     if valid_time_indices.size == 0:
         counts = np.zeros(pixel_count, dtype=np.int32)
         return counts, 0
-
+    
     rain_valid = np.asarray(
-        _RAIN.isel(time=valid_time_indices).values,
+        gage_cache["rain"].isel(time=valid_time_indices).values,
         dtype=np.float32,
     ).reshape(valid_time_indices.size, pixel_count)
 
@@ -268,46 +288,47 @@ def _compute_recurrence_counts(gage_id: str) -> tuple[np.ndarray, int]:
     return counts, max_count
 
 
-def _get_recurrence_counts(gage_id: str) -> np.ndarray:
-    global _RECURRENCE_COUNTS, _RECURRENCE_MAX_COUNT
-
+def _get_recurrence_data(gage_id: str) -> tuple[np.ndarray, int]:
     _init_once(gage_id)
-    if _RECURRENCE_COUNTS is not None:
-        return _RECURRENCE_COUNTS
+    cache = _GAGE_CACHE[gage_id]
 
-    with _RECURRENCE_LOCK:
-        if _RECURRENCE_COUNTS is None:
+    if "recurrence_counts" in cache and "recurrence_max_count" in cache:
+        return cache["recurrence_counts"], cache["recurrence_max_count"]
+    
+    with _get_gage_lock(gage_id):
+        if "recurrence_counts" not in cache or "recurrence_max_count" not in cache:
             counts, max_count = _compute_recurrence_counts(gage_id)
-            _RECURRENCE_COUNTS = counts
-            _RECURRENCE_MAX_COUNT = max_count
+            cache["recurrence_counts"] = counts
+            cache["recurrence_max_count"] = max_count
 
-    return _RECURRENCE_COUNTS
+    return cache["recurrence_counts"], cache["recurrence_max_count"]
 
 
 def get_mrms_meta(gage_id) -> dict[str, object]:
     _init_once(gage_id)
-    recurrence_counts = _get_recurrence_counts(gage_id)
+    _, recurrence_max_count = _get_recurrence_data(gage_id)
 
+    gage_cache = _GAGE_CACHE[gage_id]
     return {
-        "nt": int(_NT),
-        "times_iso": _TIMES_ISO,
-        "valid_time_indices": _VALID_TIME_INDICES.tolist(),
-        "valid_times_iso": _VALID_TIMES_ISO,
+        "nt": int(gage_cache["nt"]),
+        "times_iso": gage_cache["times_iso"],
+        "valid_time_indices": gage_cache["valid_time_indices"].tolist(),
+        "valid_times_iso": gage_cache["valid_times_iso"],
         "zarr_path": get_zarr_path(gage_id),
-        "n_pixels": int(_LON_FLAT.size),
-        "west": _WEST,
-        "east": _EAST,
-        "south": _SOUTH,
-        "north": _NORTH,
-        "recurrence_max_count": int(recurrence_counts.max(initial=0)),
-        "n_valid_times": int(_VALID_TIME_INDICES.size),
+        "n_pixels": int(gage_cache["lon_flat"].size),
+        "west": gage_cache["west"],
+        "east": gage_cache["east"],
+        "south": gage_cache["south"],
+        "north": gage_cache["north"],
+        "recurrence_max_count": int(recurrence_max_count),
+        "n_valid_times": int(gage_cache["valid_time_indices"].size),
     }
 
 
 def render_tile_png(time_index: int, z: int, x: int, y: int, gage_id: str) -> bytes:
     _init_once(gage_id)
 
-    if time_index < 0 or time_index >= int(_NT):
+    if time_index < 0 or time_index >= int(_GAGE_CACHE[gage_id]["nt"]):
         return _transparent_png_bytes(gage_id)
 
     values_1d = _rain_time_to_1d(time_index, gage_id)
@@ -315,19 +336,21 @@ def render_tile_png(time_index: int, z: int, x: int, y: int, gage_id: str) -> by
 
 
 def render_recurrence_tile_png(z: int, x: int, y: int, gage_id: str) -> bytes:
-    counts = _get_recurrence_counts(gage_id).astype(np.float32, copy=False)
+    counts, _ = _get_recurrence_data(gage_id)
+    counts = counts.astype(np.float32, copy=False)
     return _render_flat_values_to_tile(values_1d=counts, bins=RECURRENCE_BINS, z=z, x=x, y=y, gage_id=gage_id)
 
 
 def value_at_latlon(time_index: int, lon: float, lat: float, gage_id: str) -> float | None:
     _init_once(gage_id)
+    gage_cache = _GAGE_CACHE[gage_id]
 
-    if time_index < 0 or time_index >= int(_NT):
+    if time_index < 0 or time_index >= int(gage_cache["nt"]):
         return None
 
     values_1d = _rain_time_to_1d(time_index, gage_id)
-    dx = _LON_FLAT - float(lon)
-    dy = _LAT_FLAT - float(lat)
+    dx = gage_cache["lon_flat"] - float(lon)
+    dy = gage_cache["lat_flat"] - float(lat)
     nearest_index = int(np.argmin(dx * dx + dy * dy))
 
     value = values_1d[nearest_index]
@@ -337,9 +360,10 @@ def value_at_latlon(time_index: int, lon: float, lat: float, gage_id: str) -> fl
 def recurrence_at_latlon(lon: float, lat: float, gage_id: str) -> int:
     _init_once(gage_id)
 
-    counts = _get_recurrence_counts(gage_id)
-    dx = _LON_FLAT - float(lon)
-    dy = _LAT_FLAT - float(lat)
+    counts, _ = _get_recurrence_data(gage_id)
+    gage_cache = _GAGE_CACHE[gage_id]
+    dx = gage_cache["lon_flat"] - float(lon)
+    dy = gage_cache["lat_flat"] - float(lat)
     nearest_index = int(np.argmin(dx * dx + dy * dy))
     return int(counts[nearest_index])
 
@@ -347,13 +371,15 @@ def recurrence_at_latlon(lon: float, lat: float, gage_id: str) -> int:
 def max_pixel_at_time(time_index: int, gage_id: str) -> tuple[float | None, float | None, float | None]:
     _init_once(gage_id)
 
+    gage_cache = _GAGE_CACHE[gage_id]
+
     ti = int(time_index)
-    if ti < 0 or ti >= int(_NT):
+    if ti < 0 or ti >= int(gage_cache["nt"]):
         return (None, None, None)
 
-    cached = _MAX_CACHE.get(ti)
+    cached = gage_cache["max_pixel_cache"].get(ti)
     if cached is not None:
-        _MAX_CACHE.move_to_end(ti)
+        gage_cache["max_pixel_cache"].move_to_end(ti)
         return cached
 
     values_1d = _rain_time_to_1d(ti, gage_id)
@@ -363,17 +389,17 @@ def max_pixel_at_time(time_index: int, gage_id: str) -> tuple[float | None, floa
         masked = np.where(valid, values_1d, -np.inf)
         max_index = int(np.argmax(masked))
         result = (
-            float(_LON_FLAT[max_index]),
-            float(_LAT_FLAT[max_index]),
+            float(gage_cache["lon_flat"][max_index]),
+            float(gage_cache["lat_flat"][max_index]),
             float(values_1d[max_index]),
         )
     else:
         result = (None, None, None)
 
-    _MAX_CACHE[ti] = result
-    _MAX_CACHE.move_to_end(ti)
+    gage_cache["max_pixel_cache"][ti] = result
+    gage_cache["max_pixel_cache"].move_to_end(ti)
 
-    while len(_MAX_CACHE) > MAX_CACHE_LIMIT:
-        _MAX_CACHE.popitem(last=False)
+    while len(gage_cache["max_pixel_cache"]) > MAX_CACHE_LIMIT:
+        gage_cache["max_pixel_cache"].popitem(last=False)
 
     return result

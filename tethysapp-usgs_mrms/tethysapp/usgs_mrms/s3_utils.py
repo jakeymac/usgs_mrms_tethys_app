@@ -12,34 +12,40 @@ def get_bucket():
     bucket = s3.Bucket("tgf-mentorship-gonzalo")
     return bucket
 
-def download_basin_geojson(state_name, app_media_path):
+def download_basin_geojson(state_name, app_media_path, task_id):
     bucket = get_bucket()
-    os.makedirs(f'{app_media_path}/basin_json', exist_ok=True)
-    if not os.path.exists(f'{app_media_path}/basin_json/{state_name}'):
-        if len(os.listdir(f'{app_media_path}/basin_json')) == 5:
-            oldest_file = min(os.listdir(f'{app_media_path}/basin_json'), key=lambda f: os.path.getctime(os.path.join(f'{app_media_path}/basin_json', f)))
-            os.remove(os.path.join(f'{app_media_path}/basin_json', oldest_file))
-        os.makedirs(f'{app_media_path}/basin_json/{state_name}', exist_ok=True)
-        for obj in bucket.objects.filter(Prefix=f'basins_json/{state_name}'):
+    prefix = f'basins_json/{state_name}'
+    dest = f"{app_media_path}/basin_json"
+
+    os.makedirs(dest, exist_ok=True)
+    if not os.path.exists(f'{dest}/{state_name}'):
+        if len(os.listdir(dest)) == 5:
+            oldest_file = min(os.listdir(dest), key=lambda f: os.path.getctime(os.path.join(dest, f)))
+            os.remove(os.path.join(dest, oldest_file))
+        os.makedirs(f'{dest}/{state_name}', exist_ok=True)
+        for obj in bucket.objects.filter(Prefix=prefix):
             if obj.key.endswith('.json'):
-                local_path = os.path.join(f'{app_media_path}/basin_json/{state_name}', os.path.basename(obj.key))
+                local_path = os.path.join(f'{dest}/{state_name}', os.path.basename(obj.key))
                 bucket.download_file(obj.key, local_path)
 
-def download_zarr_file(state_name, gage_id, app_media_path):
+def download_zarr_file(state_name, gage_id, task_id, app_media_path):
     first_folder = gage_id[:2]
     second_folder = gage_id[:4]
     bucket = get_bucket()
     zarr_prefix = f"rain_zarr/{state_name}/{first_folder}/{second_folder}/{gage_id}.zarr"
-    local_zarr_path = os.path.join(app_media_path, "zarr_files", f"{gage_id}.zarr")
-    os.makedirs(f'{app_media_path}/zarr_files', exist_ok=True)
+    
+    dest = f"{app_media_path}/zarr_files"
+    local_zarr_path = os.path.join(dest, f"{gage_id}.zarr")
+
+    os.makedirs(dest, exist_ok=True)
     if not os.path.exists(local_zarr_path):
-        existing_files = os.listdir(f'{app_media_path}/zarr_files')
+        existing_files = os.listdir(dest)
         if len(existing_files) == 5:
-            oldest_file = min(existing_files, key=lambda f: os.path.getctime(os.path.join(f'{app_media_path}/zarr_files', f)))
-            shutil.rmtree(os.path.join(f'{app_media_path}/zarr_files', oldest_file))
+            oldest_file = min(existing_files, key=lambda f: os.path.getctime(os.path.join(dest, f)))
+            shutil.rmtree(os.path.join(dest, oldest_file))
         objects = bucket.objects.filter(Prefix=zarr_prefix)
         for obj in objects:
             relative_path = os.path.relpath(obj.key, os.path.dirname(zarr_prefix))
-            local_file_path = os.path.join(f'{app_media_path}/zarr_files', relative_path)
+            local_file_path = os.path.join(dest, relative_path)
             os.makedirs(os.path.dirname(local_file_path), exist_ok=True)
             bucket.download_file(obj.key, local_file_path)

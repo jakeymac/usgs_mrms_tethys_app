@@ -1,6 +1,11 @@
 import os
 import json
+import uuid
+import threading
+import time
 
+from django.http import JsonResponse, StreamingHttpResponse
+from django.shortcuts import redirect
 from tethys_sdk.routing import controller
 from tethys_sdk.layouts import MapLayout
 from tethys_sdk.gizmos import MapView, MVLayer
@@ -12,9 +17,44 @@ from ..mrms_tiles import get_mrms_meta
 def home(request):
     return App.render(request, "home.html")
 
+@controller(name="download_basin", url="download_basin/{state}/")
+def download_basin_page(request, state):
+    state = state.title()
+    return App.render(request, "downloading.html", {"state": state})
+
+@controller(name="do_download_basin_endpoint", url="do_download_basin/{state}/", app_media=True)
+def do_download_basin(request, state, app_media):
+    state = state.upper()
+    try:
+        download_basin_geojson(state, app_media.path)
+        return JsonResponse({"status": "success"})
+    
+    except FileNotFoundError as e:
+        return JsonResponse({"status": "error", "message": str(e)}, status=404)
+
+    except Exception as e:
+        return JsonResponse({"status": "error", "message": str(e)}, status=500)
+
+@controller(name="download_zarr", url="download_zarr/{state}/{gage_id}/")
+def download_zarr(request, state, gage_id):
+    state = state.title()
+    return App.render(request, "downloading.html", {"state": state, "gage_id": gage_id})
+
+@controller(name="do_download_zarr_endpoint", url="do_download_zarr/{state}/{gage_id}/", app_media=True)
+def do_download_zarr(request, state, gage_id, app_media):
+    state = state.upper()
+    try:
+        download_zarr_file(state, gage_id, app_media.path)
+        return JsonResponse({"status": "success"})
+    
+    except FileNotFoundError as e:
+        return JsonResponse({"status": "error", "message": str(e)}, status=404)
+
+    except Exception as e:
+        return JsonResponse({"status": "error", "message": str(e)}, status=500)
+
 def create_basin_json(state):
     app_media_path = App.get_app_media().path
-    download_basin_geojson(state.upper(), app_media_path)
 
     features = []
     folder_path = os.path.join(app_media_path, "basin_json", state.upper())
@@ -41,7 +81,7 @@ def create_basin_json(state):
 
     return geojson_object
 
-@controller(name="state_basin", url="basin/{state}/")
+@controller(name="state_basin", url="basin/{state}/", app_media=True)
 class StateBasinMapLayout(MapLayout):
     app = App
     base_template = 'usgs_mrms/base.html'
@@ -54,7 +94,15 @@ class StateBasinMapLayout(MapLayout):
 
     show_properties_popup = True
 
-    def compose_layers(self, request, map_view, *args, **kwargs):
+    def get(self, request, state, app_media, *args, **kwargs):
+        app_media_path = app_media.path
+        basin_dir = os.path.join(app_media_path, "basin_json", state.upper())
+        if not os.path.exists(basin_dir) or not os.listdir(basin_dir):
+            return redirect("usgs_mrms:download_basin", state=state)
+
+        return super().get(request, state=state, app_media=app_media, *args, **kwargs)  
+
+    def compose_layers(self, request, map_view, app_media, *args, **kwargs):
         state = kwargs.get("state").capitalize()
         basin_geojson = create_basin_json(state)
         basin_layer = self.build_geojson_layer(
@@ -87,9 +135,15 @@ class StateBasinMapLayout(MapLayout):
     name="zarr_viewer",
     url="basin/{state}/{gage_id}",
     login_required=False,
+    app_media=True
 )
-def leaflet_mrms(request, state, gage_id):
-    download_zarr_file(state.upper(), gage_id, App.get_app_media().path)
+def leaflet_mrms(request, state, gage_id, app_media):
+    app_media_path = app_media.path
+    zarr_path = os.path.join(app_media_path, "zarr_files", f"{gage_id}.zarr")
+
+    if not os.path.exists(zarr_path):
+        return redirect("usgs_mrms:download_zarr", state=state, gage_id=gage_id)
+
     meta = get_mrms_meta(gage_id)
 
     valid_time_indices = meta["valid_time_indices"]
@@ -119,25 +173,3 @@ def leaflet_mrms(request, state, gage_id):
     }
 
     return App.render(request, "leaflet_mrms.html", context)
-
-# def state_basin(request, state):
-#     state = state.capitalize()
-#     print("Before creating basin layer...")
-#     basin_layer = create_basin_layer(state)
-#     print("After creating basin layer...")
-
-#     map_view = MapView(
-#         height="500px",
-#         width="100%",
-#         controls=["ZoomControl", "ScaleControl"],
-#         basemap="OpenStreetMap",
-#         layers=[basin_layer],
-#     )
-
-#     print("Building context...")
-#     context = {
-#         "state": state,
-#         "map_view": map_view,
-#     }
-
-#     return App.render(request, "state_basin.html", context)

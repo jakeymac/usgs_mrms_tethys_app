@@ -1,0 +1,27 @@
+{% extends "usgs_mrms/base.html" %}
+{% load tethys static %}
+{% block title %}{{ block.super }} - Home{% endblock %}
+
+{% block styles %}
+{{ block.super }}
+<link rel="stylesheet" href="{% static 'usgs_mrms/css/downloading.css' %}">
+{% endblock %}
+
+{% block app_content %}
+<input type="hidden" id="csrf-token" value="{{ csrf_token }}">
+<input type="hidden" id="state-name" value="{{ state }}">
+<input type="hidden" id="gage-id" value="{{ gage_id|default:'' }}">
+<div class="download-container">
+  {% if gage_id and state %}
+    <p>Downloading data for gage ID {{ gage_id }} in {{ state }}...</p>
+  {% else %}
+    <p>Downloading data for {{ state }}...</p>
+  {% endif %}
+  <div class="spinner"></div>
+</div>
+<div class="error-message-container">
+  <p class="error-message"></p>
+  <button onclick=returnToPreviousPage() class="btn btn-primary">Return</button>
+</div>
+<script src="{% static 'usgs_mrms/js/downloading.js' %}"></script>
+{% endblock %}

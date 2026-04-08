@@ -14,32 +14,43 @@ def get_bucket():
 
 def download_basin_geojson(state_name, app_media_path):
     bucket = get_bucket()
-    os.makedirs(f'{app_media_path}/basin_json', exist_ok=True)
-    if not os.path.exists(f'{app_media_path}/basin_json/{state_name}'):
-        if len(os.listdir(f'{app_media_path}/basin_json')) == 5:
-            oldest_file = min(os.listdir(f'{app_media_path}/basin_json'), key=lambda f: os.path.getctime(os.path.join(f'{app_media_path}/basin_json', f)))
-            os.remove(os.path.join(f'{app_media_path}/basin_json', oldest_file))
-        os.makedirs(f'{app_media_path}/basin_json/{state_name}', exist_ok=True)
-        for obj in bucket.objects.filter(Prefix=f'basins_json/{state_name}'):
-            if obj.key.endswith('.json'):
-                local_path = os.path.join(f'{app_media_path}/basin_json/{state_name}', os.path.basename(obj.key))
-                bucket.download_file(obj.key, local_path)
+    prefix = f'basins_json/{state_name}'
+    dest = f"{app_media_path}/basin_json"
+
+    os.makedirs(dest, exist_ok=True)
+    if not os.path.exists(f'{dest}/{state_name}'):
+        objects = [obj for obj in bucket.objects.filter(Prefix=prefix) if obj.key.endswith('.json')]
+        if not objects:
+            raise FileNotFoundError(f"No basin JSON files found in S3 for state {state_name} with prefix {prefix}")
+        if len(os.listdir(dest)) == 5:
+            oldest_dir = min(os.listdir(dest), key=lambda f: os.path.getctime(os.path.join(dest, f)))
+            shutil.rmtree(os.path.join(dest, oldest_dir))
+        os.makedirs(f'{dest}/{state_name}', exist_ok=True)
+        for obj in objects:
+            local_path = os.path.join(f'{dest}/{state_name}', os.path.basename(obj.key))
+            bucket.download_file(obj.key, local_path)
 
 def download_zarr_file(state_name, gage_id, app_media_path):
     first_folder = gage_id[:2]
     second_folder = gage_id[:4]
     bucket = get_bucket()
     zarr_prefix = f"rain_zarr/{state_name}/{first_folder}/{second_folder}/{gage_id}.zarr"
-    local_zarr_path = os.path.join(app_media_path, "zarr_files", f"{gage_id}.zarr")
-    os.makedirs(f'{app_media_path}/zarr_files', exist_ok=True)
+    
+    dest = f"{app_media_path}/zarr_files"
+    local_zarr_path = os.path.join(dest, f"{gage_id}.zarr")
+
+    os.makedirs(dest, exist_ok=True)
     if not os.path.exists(local_zarr_path):
-        existing_files = os.listdir(f'{app_media_path}/zarr_files')
+        existing_files = os.listdir(dest)
         if len(existing_files) == 5:
-            oldest_file = min(existing_files, key=lambda f: os.path.getctime(os.path.join(f'{app_media_path}/zarr_files', f)))
-            shutil.rmtree(os.path.join(f'{app_media_path}/zarr_files', oldest_file))
-        objects = bucket.objects.filter(Prefix=zarr_prefix)
+            oldest_file = min(existing_files, key=lambda f: os.path.getctime(os.path.join(dest, f)))
+            shutil.rmtree(os.path.join(dest, oldest_file))
+        objects = list(bucket.objects.filter(Prefix=zarr_prefix))
+        if len(objects) == 0:
+            raise FileNotFoundError(f"No Zarr files found in S3 for {gage_id} with prefix {zarr_prefix}")
+
         for obj in objects:
             relative_path = os.path.relpath(obj.key, os.path.dirname(zarr_prefix))
-            local_file_path = os.path.join(f'{app_media_path}/zarr_files', relative_path)
+            local_file_path = os.path.join(dest, relative_path)
             os.makedirs(os.path.dirname(local_file_path), exist_ok=True)
             bucket.download_file(obj.key, local_file_path)

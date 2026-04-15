@@ -1,14 +1,12 @@
 import os
 import json
-import uuid
-import threading
-import time
+from pathlib import Path
 
-from django.http import JsonResponse, StreamingHttpResponse
+from django.http import JsonResponse
 from django.shortcuts import redirect
 from tethys_sdk.routing import controller
 from tethys_sdk.layouts import MapLayout
-from tethys_sdk.gizmos import MapView, MVLayer
+from tethys_sdk.gizmos import MVView
 from ..app import App
 from ..s3_utils import download_basin_geojson, download_zarr_file
 from ..mrms_tiles import get_mrms_meta
@@ -94,19 +92,38 @@ class StateBasinMapLayout(MapLayout):
 
     show_properties_popup = True
 
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
     def get(self, request, state, app_media, *args, **kwargs):
         app_media_path = app_media.path
         basin_dir = os.path.join(app_media_path, "basin_json", state.upper())
         if not os.path.exists(basin_dir) or not os.listdir(basin_dir):
             return redirect("usgs_mrms:download_basin", state=state)
 
+        self.basin_json = create_basin_json(state)
+        self.state = state.upper()
         return super().get(request, state=state, app_media=app_media, *args, **kwargs)  
+
+    def build_map_extent_and_view(self, request, *args, **kwargs):
+        # Retreive state map extent from JSON file
+        state_extents_file = Path(__file__).parent / "../state_map_extents/state_extents.json"
+        state_extents_json = json.load(state_extents_file.open())
+        self.map_extent = state_extents_json.get(self.state, [-180, -90, 180, 90])
+        self.map_center = [(self.map_extent[1] + self.map_extent[3]) / 2, 
+                           (self.map_extent[0] + self.map_extent[2]) / 2]
+
+        map_view =MVView(
+            extent=self.map_extent,
+            zoom=6
+        )
+        return map_view, self.map_center
 
     def compose_layers(self, request, map_view, app_media, *args, **kwargs):
         state = kwargs.get("state").capitalize()
-        basin_geojson = create_basin_json(state)
+
         basin_layer = self.build_geojson_layer(
-            basin_geojson, 
+            self.basin_json, 
             layer_name=f"basins",
             layer_title=f"{state} Basins",
             layer_variable='basins',
@@ -116,7 +133,6 @@ class StateBasinMapLayout(MapLayout):
         )
 
         map_view.layers.append(basin_layer)
-
         # Add layer to layer group
         layer_groups = [
             self.build_layer_group(

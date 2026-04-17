@@ -1,14 +1,12 @@
 import os
 import json
-import uuid
-import threading
-import time
+from pathlib import Path
 
-from django.http import JsonResponse, StreamingHttpResponse
+from django.http import JsonResponse
 from django.shortcuts import redirect
 from tethys_sdk.routing import controller
 from tethys_sdk.layouts import MapLayout
-from tethys_sdk.gizmos import MapView, MVLayer
+from tethys_sdk.gizmos import MVView
 from ..app import App
 from ..s3_utils import download_basin_geojson, download_zarr_file
 from ..mrms_tiles import get_mrms_meta
@@ -53,6 +51,37 @@ def do_download_zarr(request, state, gage_id, app_media):
     except Exception as e:
         return JsonResponse({"status": "error", "message": str(e)}, status=500)
 
+def calculate_ring_area(ring):
+    area = 0.0
+    n = len(ring)
+    for i in range(n):
+        x1, y1 = ring[i][0], ring[i][1]
+        x2, y2 = ring[(i + 1) % n][0], ring[(i + 1) % n][1]
+        area += x1 * y2 - x2 * y1
+    return abs(area) / 2.0
+
+
+def calculate_basin_area(geometry):
+    if not geometry:
+        return 0.0
+    gtype = geometry.get("type")
+    coords = geometry.get("coordinates", [])
+    if gtype == "Polygon" and coords:
+        outer = calculate_ring_area(coords[0])
+        holes = sum(calculate_ring_area(r) for r in coords[1:])
+        return max(outer - holes, 0.0)
+    if gtype == "MultiPolygon":
+        total = 0.0
+        for poly in coords:
+            if not poly:
+                continue
+            outer = calculate_ring_area(poly[0])
+            holes = sum(calculate_ring_area(r) for r in poly[1:])
+            total += max(outer - holes, 0.0)
+        return total
+    return 0.0
+
+
 def create_basin_json(state):
     app_media_path = App.get_app_media().path
 
@@ -67,6 +96,9 @@ def create_basin_json(state):
                 features.append(
                     {"type": "Feature", "geometry": data["geometry"], "properties": data["properties"]}
                 )
+
+    # Sort largest-first so smaller basins render on top and remain selectable
+    features.sort(key=lambda f: calculate_basin_area(f.get("geometry")), reverse=True)
 
     geojson_object = {
         "type": "FeatureCollection",
@@ -94,19 +126,38 @@ class StateBasinMapLayout(MapLayout):
 
     show_properties_popup = True
 
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
     def get(self, request, state, app_media, *args, **kwargs):
         app_media_path = app_media.path
         basin_dir = os.path.join(app_media_path, "basin_json", state.upper())
         if not os.path.exists(basin_dir) or not os.listdir(basin_dir):
             return redirect("usgs_mrms:download_basin", state=state)
 
+        self.basin_json = create_basin_json(state)
+        self.state = state.upper()
         return super().get(request, state=state, app_media=app_media, *args, **kwargs)  
+
+    def build_map_extent_and_view(self, request, *args, **kwargs):
+        # Retreive state map extent from JSON file
+        state_extents_file = Path(__file__).parent / "../state_map_extents/state_extents.json"
+        state_extents_json = json.load(state_extents_file.open())
+        self.map_extent = state_extents_json.get(self.state, [-180, -90, 180, 90])
+        self.map_center = [(self.map_extent[1] + self.map_extent[3]) / 2, 
+                           (self.map_extent[0] + self.map_extent[2]) / 2]
+
+        map_view =MVView(
+            extent=self.map_extent,
+            zoom=6
+        )
+        return map_view, self.map_center
 
     def compose_layers(self, request, map_view, app_media, *args, **kwargs):
         state = kwargs.get("state").capitalize()
-        basin_geojson = create_basin_json(state)
+
         basin_layer = self.build_geojson_layer(
-            basin_geojson, 
+            self.basin_json, 
             layer_name=f"basins",
             layer_title=f"{state} Basins",
             layer_variable='basins',
@@ -116,7 +167,6 @@ class StateBasinMapLayout(MapLayout):
         )
 
         map_view.layers.append(basin_layer)
-
         # Add layer to layer group
         layer_groups = [
             self.build_layer_group(

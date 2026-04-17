@@ -12,10 +12,10 @@ def get_bucket():
     bucket = s3.Bucket("tgf-mentorship-gonzalo")
     return bucket
 
-def download_basin_geojson(state_name, app_media_path):
+def download_basin_geojson(state_name, destination_path):
     bucket = get_bucket()
     prefix = f'basins_json/{state_name}'
-    dest = f"{app_media_path}/basin_json"
+    dest = f"{destination_path}/basin_json"
 
     os.makedirs(dest, exist_ok=True)
     if not os.path.exists(f'{dest}/{state_name}'):
@@ -30,13 +30,13 @@ def download_basin_geojson(state_name, app_media_path):
             local_path = os.path.join(f'{dest}/{state_name}', os.path.basename(obj.key))
             bucket.download_file(obj.key, local_path)
 
-def download_zarr_file(state_name, gage_id, app_media_path):
+def download_zarr_file(state_name, gage_id, destination_path):
     first_folder = gage_id[:2]
     second_folder = gage_id[:4]
     bucket = get_bucket()
     zarr_prefix = f"rain_zarr/{state_name}/{first_folder}/{second_folder}/{gage_id}.zarr"
     
-    dest = f"{app_media_path}/zarr_files"
+    dest = f"{destination_path}/zarr_files"
     local_zarr_path = os.path.join(dest, f"{gage_id}.zarr")
 
     os.makedirs(dest, exist_ok=True)

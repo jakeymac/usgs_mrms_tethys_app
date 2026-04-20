@@ -1,6 +1,7 @@
 import os
 import json
 from pathlib import Path
+import shutil
 
 from django.http import JsonResponse
 from django.shortcuts import redirect
@@ -8,7 +9,7 @@ from tethys_sdk.routing import controller
 from tethys_sdk.layouts import MapLayout
 from tethys_sdk.gizmos import MVView
 from ..app import App
-from ..s3_utils import download_basin_geojson, download_zarr_file
+from ..s3_utils import download_basin_geojson_files, download_zarr_file
 from ..mrms_tiles import get_mrms_meta
 
 @controller(name="home")
@@ -17,14 +18,54 @@ def home(request):
 
 @controller(name="download_basin", url="download_basin/{state}/")
 def download_basin_page(request, state):
+    breakpoint()
     state = state.title()
     return App.render(request, "downloading.html", {"state": state})
 
 @controller(name="do_download_basin_endpoint", url="do_download_basin/{state}/", app_media=True)
 def do_download_basin(request, state, app_media):
+    breakpoint()
     state = state.upper()
     try:
-        download_basin_geojson(state, app_media.path)
+        download_basin_geojson_files(state, app_media.path)
+        features = []
+        folder_path = os.path.join(app_media.path, "basin_json_downloaded_files", state.upper())
+        for filename in os.listdir(folder_path):
+            if filename.endswith(".json"):
+                filepath = os.path.join(folder_path, filename)
+
+                with open(filepath, "r") as f:
+                    data = json.load(f)
+                    features.append(
+                        {"type": "Feature", "geometry": data["geometry"], "properties": data["properties"]}
+                    )
+
+        # Sort largest-first so smaller basins render on top and remain selectable
+        features.sort(key=lambda f: calculate_basin_area(f.get("geometry")), reverse=True)
+
+        geojson_object = {
+            "type": "FeatureCollection",
+            'crs': {
+                'type': 'name',
+                'properties': {
+                'name': 'EPSG:4326'
+                }
+            },
+            "features": features,
+        }
+
+        generated_json_folder_path = os.path.join(App.get_app_media().path, "generated_basin_json")
+        if not os.path.exists(generated_json_folder_path):
+            os.makedirs(generated_json_folder_path)
+        
+        generated_json_file_path = os.path.join(App.get_app_media().path, "generated_basin_json", f"{state.upper()}.json")
+
+        with open(generated_json_file_path, "w") as f:
+            json.dump(geojson_object, f)
+
+        # Delete the downloaded basin JSON files after generating the consolidated JSON file
+        shutil.rmtree(os.path.join(App.get_app_media().path, "basin_json_downloaded_files", state.upper()))
+
         return JsonResponse({"status": "success"})
     
     except FileNotFoundError as e:
@@ -80,38 +121,16 @@ def calculate_basin_area(geometry):
             total += max(outer - holes, 0.0)
         return total
     return 0.0
+    
 
+def get_basin_json(state):
+    generated_json_file_path = os.path.join(App.get_app_media().path, "generated_basin_json", f"{state.upper()}.json")
 
-def create_basin_json(state):
-    app_media_path = App.get_app_media().path
+    if not os.path.isfile(generated_json_file_path):
+        return redirect("usgs_mrms:download_basin", state=state)
+    with open(generated_json_file_path, "r") as f:
+        return json.load(f)
 
-    features = []
-    folder_path = os.path.join(app_media_path, "basin_json", state.upper())
-    for filename in os.listdir(folder_path):
-        if filename.endswith(".json"):
-            filepath = os.path.join(folder_path, filename)
-
-            with open(filepath, "r") as f:
-                data = json.load(f)
-                features.append(
-                    {"type": "Feature", "geometry": data["geometry"], "properties": data["properties"]}
-                )
-
-    # Sort largest-first so smaller basins render on top and remain selectable
-    features.sort(key=lambda f: calculate_basin_area(f.get("geometry")), reverse=True)
-
-    geojson_object = {
-        "type": "FeatureCollection",
-        'crs': {
-            'type': 'name',
-            'properties': {
-            'name': 'EPSG:4326'
-            }
-        },
-        "features": features,
-    }
-
-    return geojson_object
 
 @controller(name="state_basin", url="basin/{state}/", app_media=True)
 class StateBasinMapLayout(MapLayout):
@@ -130,12 +149,8 @@ class StateBasinMapLayout(MapLayout):
         super().__init__(*args, **kwargs)
 
     def get(self, request, state, app_media, *args, **kwargs):
-        app_media_path = app_media.path
-        basin_dir = os.path.join(app_media_path, "basin_json", state.upper())
-        if not os.path.exists(basin_dir) or not os.listdir(basin_dir):
-            return redirect("usgs_mrms:download_basin", state=state)
-
-        self.basin_json = create_basin_json(state)
+        self.basin_json = get_basin_json(state)
+        
         self.state = state.upper()
         return super().get(request, state=state, app_media=app_media, *args, **kwargs)  
 

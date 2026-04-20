@@ -12,10 +12,10 @@ def get_bucket():
     bucket = s3.Bucket("tgf-mentorship-gonzalo")
     return bucket
 
-def download_basin_geojson(state_name, destination_path):
+def download_basin_geojson_files(state_name, destination_path):
     bucket = get_bucket()
     prefix = f'basins_json/{state_name}'
-    dest = f"{destination_path}/basin_json"
+    dest = f"{destination_path}/basin_json_downloaded_files"
 
     os.makedirs(dest, exist_ok=True)
     if not os.path.exists(f'{dest}/{state_name}'):

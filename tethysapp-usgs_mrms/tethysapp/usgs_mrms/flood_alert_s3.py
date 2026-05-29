@@ -3,19 +3,15 @@ from __future__ import annotations
 import os
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
-
+from .app import App
 import boto3
-from dotenv import load_dotenv
-
-
-load_dotenv(Path(__file__).resolve().parents[2] / ".env")
-
-BUCKET_NAME = "tgf-mentorship-gonzalo"
 
 
 def get_bucket():
-    key = os.getenv("KEY")
-    secret = os.getenv("SECRET")
+    key = App.get_custom_setting("s3_key")
+    secret = App.get_custom_setting("s3_secret")
+    s3_region = App.get_custom_setting("s3_region")
+    bucket_name = App.get_custom_setting("bucket_name")
 
     if not key or not secret:
         raise RuntimeError("Missing S3 credentials. Expected KEY and SECRET in the app .env file.")
@@ -24,9 +20,9 @@ def get_bucket():
         "s3",
         aws_access_key_id=key,
         aws_secret_access_key=secret,
-        region_name="us-east-1",
+        region_name=s3_region,
     )
-    return s3.Bucket(BUCKET_NAME)
+    return s3.Bucket(bucket_name)
 
 
 def download_s3_file_if_missing(*, s3_key: str, local_fp: Path) -> Path:
@@ -38,7 +34,7 @@ def download_s3_file_if_missing(*, s3_key: str, local_fp: Path) -> Path:
         return local_fp
 
     bucket = get_bucket()
-    print(f"[DOWNLOAD] s3://{BUCKET_NAME}/{s3_key} -> {local_fp}", flush=True)
+    print(f"[DOWNLOAD] s3://{bucket.name}/{s3_key} -> {local_fp}", flush=True)
     bucket.download_file(s3_key, str(local_fp))
     return local_fp
 
@@ -68,7 +64,7 @@ def download_s3_prefix_jsons(
     objects = [obj for obj in bucket.objects.filter(Prefix=s3_prefix) if obj.key.endswith(".json")]
 
     if not objects:
-        raise FileNotFoundError(f"No JSON files found in s3://{BUCKET_NAME}/{s3_prefix}")
+        raise FileNotFoundError(f"No JSON files found in s3://{bucket.name}/{s3_prefix}")
 
     tasks = []
     downloaded: list[Path] = []
@@ -82,7 +78,7 @@ def download_s3_prefix_jsons(
             tasks.append((obj.key, local_fp))
 
     print(
-        f"[BASIN JSON] prefix=s3://{BUCKET_NAME}/{s3_prefix} "
+        f"[BASIN JSON] prefix=s3://{bucket.name}/{s3_prefix} "
         f"total={len(objects)} existing={len(downloaded)} to_download={len(tasks)} workers={workers}",
         flush=True,
     )
@@ -108,7 +104,7 @@ def download_s3_prefix_jsons(
                     print(f"[BASIN JSON] downloaded {n}/{len(tasks)}", flush=True)
 
             except Exception as e:
-                raise RuntimeError(f"Failed downloading s3://{BUCKET_NAME}/{obj_key} -> {local_fp}: {e}") from e
+                raise RuntimeError(f"Failed downloading s3://{bucket.name}/{obj_key} -> {local_fp}: {e}") from e
 
     return downloaded
 

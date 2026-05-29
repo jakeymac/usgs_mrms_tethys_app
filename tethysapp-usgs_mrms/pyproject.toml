@@ -5,6 +5,8 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "tethysapp-usgs_mrms"
 description =  "Tethys application for real-time flood early warning, MRMS rainfall visualization, USGS water stage monitoring, and hydrologic alert analysis across the United States."
+readme = "README.md"
+license = { text = "Apache-2.0" }
 authors = [
     { name = "Gonzalo Forero" },
     { name = "Jacob Jhonson" }
@@ -37,7 +39,7 @@ classifiers = [
      "Topic :: Internet :: WWW/HTTP",
      "Topic :: Internet :: WWW/HTTP :: Dynamic Content",
 ]
-dynamic = ["version"]
+version = "0.0.1"
 
 [tool.setuptools]
 include-package-data = true
@@ -53,6 +55,3 @@ include = ["*"]
     "resources/**/*",
     "workspaces/**/*"
 ]
-readme = "README.md"
-
-license = { text = "Apache-2.0" }

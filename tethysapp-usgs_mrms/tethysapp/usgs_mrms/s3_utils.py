@@ -2,24 +2,23 @@ import boto3
 import os
 import shutil
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from dotenv import load_dotenv
+from .app import App
 
-load_dotenv(os.path.join(os.path.dirname(__file__), "../../.env"))
-
-BUCKET_NAME = "tgf-mentorship-gonzalo"
 MAX_WORKERS = 4
 
 
 def get_bucket():
-    key = os.getenv("KEY")
-    secret = os.getenv("SECRET")
+    key = App.get_custom_setting("s3_key")
+    secret = App.get_custom_setting("s3_secret")
+    region_name = App.get_custom_setting("s3_region")
+    bucket_name = App.get_custom_setting("bucket_name")
     s3 = boto3.resource(
         "s3",
         aws_access_key_id=key,
         aws_secret_access_key=secret,
-        region_name="us-east-1",
+        region_name=region_name,
     )
-    return s3.Bucket(BUCKET_NAME)
+    return s3.Bucket(bucket_name)
 
 
 def _download_one_file(obj_key, local_path):

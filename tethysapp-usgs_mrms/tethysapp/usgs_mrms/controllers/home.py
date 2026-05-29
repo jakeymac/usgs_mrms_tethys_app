@@ -52,7 +52,6 @@ def load_single_basin_json(filepath):
 @controller(name="do_download_basin_endpoint", url="do_download_basin/{state}/", app_media=True)
 def do_download_basin(request, state, app_media):
     state = state.upper()
-
     try:
         generated_json_folder_path = os.path.join(
             App.get_app_media().path,

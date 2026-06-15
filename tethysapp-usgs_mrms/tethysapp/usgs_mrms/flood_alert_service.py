@@ -62,15 +62,27 @@ def run_flood_alert_pipeline(
     print(f"[TIME] build current rain: {perf_counter() - t1:.2f} sec", flush=True)
 
     t2 = perf_counter()
+
+    efficient_event_reference_fp = (
+    base_dir
+    / "hydro_history"
+    / "state_efficient_event_reference"
+    / f"{state}_efficient_event_reference.npz"
+
+    )
+
     alerts_result = compute_current_alerts_for_state(
         state=state,
         current_rain_npz=current_rain_npz,
         state_basin_index_npz=inputs["state_basin_index_fp"],
         pixel_event_index_npz=inputs["pixel_event_index_fp"],
+        efficient_event_reference_npz=efficient_event_reference_fp,
         out_dir=base_dir / "ews_alerts",
-        max_pixels_per_basin_output=100,
+        max_pixels_per_basin_output=250,
         workers=workers,
     )
+
+
     print(f"[TIME] compute alerts: {perf_counter() - t2:.2f} sec", flush=True)
 
     t3 = perf_counter()
@@ -84,10 +96,12 @@ def run_flood_alert_pipeline(
     pixel_csv = run_dir / "pixel_alerts.csv"
 
     export_basin_alerts_geojson(
-        state=state,
-        base_dir=base_dir,
-        basin_alerts_parquet=basin_alerts_parquet,
-        out_geojson=basin_geojson,
+    state=state,
+    base_dir=base_dir,
+    basin_alerts_parquet=basin_alerts_parquet,
+    out_geojson=basin_geojson,
+    relevant_levels=["SEVERE", "WARNING"],
+    max_features=300,
     )
 
     # Keep lightweight copies for the run folder.

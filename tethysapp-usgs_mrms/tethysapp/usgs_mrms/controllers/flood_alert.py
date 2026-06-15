@@ -14,16 +14,15 @@ from ..flood_alert_utils import build_run_id, get_times_from_run_id
 
 STATES = [
     ("ALABAMA", "Alabama"),
-    ("ALASKA", "Alaska"),
     ("ARIZONA", "Arizona"),
     ("ARKANSAS", "Arkansas"),
     ("CALIFORNIA", "California"),
     ("COLORADO", "Colorado"),
     ("CONNECTICUT", "Connecticut"),
     ("DELAWARE", "Delaware"),
+    ("DISTRICT_OF_COLUMBIA", "District of Columbia"),
     ("FLORIDA", "Florida"),
     ("GEORGIA", "Georgia"),
-    ("HAWAII", "Hawaii"),
     ("IDAHO", "Idaho"),
     ("ILLINOIS", "Illinois"),
     ("INDIANA", "Indiana"),
@@ -367,7 +366,7 @@ def flood_alert_pixel_geojson(request, state, run_id, app_media):
             safe=False,
         )
 
-    sort_cols = [c for c in ["estimated_delta_water_stage", "current_pixel_value"] if c in df.columns]
+    sort_cols = [c for c in ["current_pixel_accumulation", "current_pixel_value"] if c in df.columns]
     if sort_cols:
         df = df.sort_values(sort_cols, ascending=False)
 
@@ -385,14 +384,13 @@ def flood_alert_pixel_geojson(request, state, run_id, app_media):
         "current_pixel_accumulation",
         "current_basin_accumulation",
         "historical_basin_accumulation_threshold",
-        "estimated_delta_water_stage",
-        "estimated_time_to_rain_peak_accumulation_hr",
-        "estimated_time_to_stage_peak_hr",
-        "matched_hist_pixel_value",
-        "matched_hist_basin_accumulation",
-        "matched_hist_delta_water_stage",
-        "match_score",
-        "matched_n",
+        "historical_pixel_best_event_id",
+        "historical_pixel_best_delta_water_stage",
+        "historical_pixel_best_basin_accumulation",
+        "historical_pixel_best_pixel_accumulation",
+        "efficient_pixel_percentile",
+        "efficient_basin_percentile",
+        "efficient_weighted_percentile",
     ]
 
     features = []
@@ -403,15 +401,9 @@ def flood_alert_pixel_geojson(request, state, run_id, app_media):
 
         props = {c: _json_safe(row[c]) for c in property_cols if c in row.index}
 
-        delta = props.get("estimated_delta_water_stage")
-        if delta is None:
-            alert_level = "WATCH"
-        elif delta >= 10.0:
-            alert_level = "SEVERE"
-        elif delta >= 2.0:
-            alert_level = "WARNING"
-        else:
-            alert_level = "WATCH"
+        
+        alert_level = "SEVERE"
+        
 
         props["alert_level"] = alert_level
         props["fill_color"] = ALERT_COLORS.get(alert_level, "#808080")

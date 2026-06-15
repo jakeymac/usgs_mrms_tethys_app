@@ -141,18 +141,22 @@ def download_flood_alert_inputs(
     local_fp=base_dir / "hydro_history" / "state_efficient_event_reference" / f"{state}_efficient_event_reference.npz",
     )
 
-    basin_json_dir = base_dir / "basins_json" / state
-    
-    if len(os.listdir(basin_json_dir)) < 5:
+    basin_json_base_dir = base_dir / "basins_json"
+    basin_state_dir = basin_json_base_dir / state
+
+    if not basin_json_base_dir.exists():
+        os.makedirs(basin_json_base_dir, exist_ok=True)
+
+    if len(os.listdir(basin_json_base_dir)) >= 5:
         oldest_dir = min(
-            os.listdir(basin_json_dir),
-            key=lambda f: os.path.getctime(os.path.join(basin_json_dir, f)),
+            os.listdir(basin_json_base_dir),
+            key=lambda f: os.path.getctime(os.path.join(basin_json_base_dir, f)),
         )
-        shutil.rmtree(os.path.join(basin_json_dir, oldest_dir))
+        shutil.rmtree(os.path.join(basin_json_base_dir, oldest_dir))
 
     download_s3_prefix_jsons(
         s3_prefix=f"basins_json/{state}/",
-        local_dir=basin_json_dir,
+        local_dir=basin_state_dir,
         workers=workers,
     )
 
@@ -161,5 +165,5 @@ def download_flood_alert_inputs(
         "state_basin_index_fp": state_basin_index_fp,
         "pixel_event_index_fp": pixel_event_index_fp,
         "efficient_event_reference_fp": efficient_event_reference_fp,
-        "basin_json_dir": basin_json_dir,
+        "basin_json_dir": basin_state_dir,
     }

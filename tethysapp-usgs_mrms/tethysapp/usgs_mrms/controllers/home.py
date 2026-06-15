@@ -70,7 +70,7 @@ def do_download_basin(request, state, app_media):
 
         download_basin_geojson_files(state, app_media.path)
 
-        folder_path = os.path.join(
+        downloaded_state_path = os.path.join(
             app_media.path,
             "basin_json_downloaded_files",
             state,
@@ -78,13 +78,21 @@ def do_download_basin(request, state, app_media):
 
         json_files = [
             str(filepath)
-            for filepath in Path(folder_path).rglob("*.json")
+            for filepath in Path(downloaded_state_path).rglob("*.json")
         ]
 
         if not json_files:
             raise FileNotFoundError(
                 f"No downloaded basin JSON files found for {state}"
             )
+        
+        # Delete oldest cached generated JSON if there are too many generated JSON files already
+        if len(os.listdir(generated_json_folder_path)) >= 5:
+            oldest_file = min(
+                os.listdir(generated_json_folder_path),
+                key=lambda f: os.path.getctime(os.path.join(generated_json_folder_path, f)),
+            )
+            os.remove(os.path.join(generated_json_folder_path, oldest_file))
 
         features = []
 
@@ -117,14 +125,8 @@ def do_download_basin(request, state, app_media):
         with open(generated_json_file_path, "w") as f:
             json.dump(geojson_object, f)
 
-        downloaded_state_folder = os.path.join(
-            App.get_app_media().path,
-            "basin_json_downloaded_files",
-            state,
-        )
-
-        if os.path.exists(downloaded_state_folder):
-            shutil.rmtree(downloaded_state_folder)
+        if os.path.exists(downloaded_state_path):
+            shutil.rmtree(downloaded_state_path)
 
         return JsonResponse({"status": "success"})
 

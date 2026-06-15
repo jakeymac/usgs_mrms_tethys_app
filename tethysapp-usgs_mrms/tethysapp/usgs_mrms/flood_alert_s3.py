@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
+import shutil
 from .app import App
 import boto3
 
@@ -141,6 +142,14 @@ def download_flood_alert_inputs(
     )
 
     basin_json_dir = base_dir / "basins_json" / state
+    
+    if len(os.listdir(basin_json_dir)) < 5:
+        oldest_dir = min(
+            os.listdir(basin_json_dir),
+            key=lambda f: os.path.getctime(os.path.join(basin_json_dir, f)),
+        )
+        shutil.rmtree(os.path.join(basin_json_dir, oldest_dir))
+
     download_s3_prefix_jsons(
         s3_prefix=f"basins_json/{state}/",
         local_dir=basin_json_dir,

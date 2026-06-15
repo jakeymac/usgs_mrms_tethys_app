@@ -128,10 +128,7 @@ def download_flood_alert_inputs(
         local_fp=base_dir / "state_basin_index" / f"{state}_state_basin_index.npz",
     )
 
-    hydro_history_s3_prefix = os.getenv(
-        "HYDRO_HISTORY_S3_PREFIX",
-        "hydro_history",
-    ).strip("/")
+    hydro_history_s3_prefix = "experiments/hydro_history_3mm_all_stage"
 
     pixel_event_index_fp = download_s3_file_if_missing(
         s3_key=f"{hydro_history_s3_prefix}/state_pixel_event_index/{state}_pixel_event_index.npz",

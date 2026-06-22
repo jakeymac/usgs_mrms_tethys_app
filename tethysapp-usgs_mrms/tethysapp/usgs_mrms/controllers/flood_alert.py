@@ -8,8 +8,7 @@ from django.http import JsonResponse
 from tethys_sdk.routing import controller
 
 from ..app import App
-from ..flood_alert_service import run_flood_alert_pipeline
-from ..utils.flood_alert_utils import build_run_id, get_times_from_run_id
+from ..utils.flood_alert_utils import build_run_id, get_times_from_run_id, run_flood_alert_pipeline
 
 
 STATES = [

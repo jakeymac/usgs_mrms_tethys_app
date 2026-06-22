@@ -5,7 +5,7 @@ from pathlib import Path
 from time import perf_counter
 
 from .flood_alert_s3 import download_flood_alert_inputs
-from .flood_alert_utils import build_run_directory, build_run_id
+from .utils.flood_alert_utils import build_run_directory, build_run_id
 
 from mrms_usgs_events.ews.state_rain import build_current_state_rain_npz
 from mrms_usgs_events.ews.current_alerts import compute_current_alerts_for_state

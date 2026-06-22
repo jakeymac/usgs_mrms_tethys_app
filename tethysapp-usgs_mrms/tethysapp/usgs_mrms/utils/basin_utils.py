@@ -1,6 +1,6 @@
 import json
 import os
-from .app import App
+from ..app import App
 
 def calculate_ring_area(ring):
     area = 0.0

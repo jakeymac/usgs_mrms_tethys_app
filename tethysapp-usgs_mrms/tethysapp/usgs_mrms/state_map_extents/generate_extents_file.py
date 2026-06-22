@@ -2,7 +2,7 @@ import os
 from pathlib import Path
 import json
 import shutil
-from tethysapp.usgs_mrms.s3_utils import download_basin_geojson_files
+from tethysapp.usgs_mrms.utils.s3_utils import download_basin_geojson_files
 import logging
 
 logger = logging.getLogger(__name__)

@@ -11,9 +11,9 @@ from tethys_sdk.layouts import MapLayout
 from tethys_sdk.gizmos import MVView
 
 from ..app import App
-from ..s3_utils import download_basin_geojson_files, download_zarr_file
+from ..utils.s3_utils import download_basin_geojson_files, download_zarr_file
 from ..mrms_tiles import get_mrms_meta
-from ..basin_utils import (
+from ..utils.basin_utils import (
     calculate_basin_area,
     generated_json_exists,
     get_basin_json,

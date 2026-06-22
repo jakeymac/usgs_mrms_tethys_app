@@ -2,7 +2,7 @@ import boto3
 import os
 import shutil
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from .app import App
+from ..app import App
 
 MAX_WORKERS = 4
 

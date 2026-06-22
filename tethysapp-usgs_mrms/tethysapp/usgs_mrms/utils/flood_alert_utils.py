@@ -5,6 +5,8 @@ from pathlib import Path
 import shutil
 from time import perf_counter
 
+from ..utils.s3_utils import download_flood_alert_inputs
+
 from mrms_usgs_events.ews.state_rain import build_current_state_rain_npz
 from mrms_usgs_events.ews.current_alerts import compute_current_alerts_for_state
 from mrms_usgs_events.ews.tethys_outputs import export_basin_alerts_geojson

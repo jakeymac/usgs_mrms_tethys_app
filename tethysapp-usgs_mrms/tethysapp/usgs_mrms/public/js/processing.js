@@ -19,6 +19,60 @@ let runId;
 let workers;
 let processType;
 
+const FLOOD_ALERT_POLL_INTERVAL_MS = 3000;
+
+function submitToRunFloodAlert() {
+    const form = document.createElement("form");
+    form.method = "POST";
+    form.action = BASE_URL + "flood-alert/run/";
+
+    const fields = {
+        csrfmiddlewaretoken: csrfToken,
+        state: state,
+        run_id: runId,
+        workers: workers,
+    };
+
+    for (const [name, value] of Object.entries(fields)) {
+        const input = document.createElement("input");
+        input.type = "hidden";
+        input.name = name;
+        input.value = value;
+        form.appendChild(input);
+    }
+
+    document.body.appendChild(form);
+    form.submit();
+}
+
+async function pollFloodAlertStatus() {
+    const url = BASE_URL + "flood-alert/status/" + state.toUpperCase() + "/" + runId + "/";
+
+    while (true) {
+        let data;
+        try {
+            const res = await fetch(url, { method: "GET", headers: { "X-CSRFToken": csrfToken } });
+            data = await res.json();
+        } catch (err) {
+            showError("Lost connection while checking flood alert status.");
+            return;
+        }
+
+        if (data.status === "done") {
+            // Submit a form to redirect to the flood alert results page
+            submitToRunFloodAlert();
+            return;
+        }
+
+        if (data.status === "not_found") {
+            showError("Flood alert run could not be found.");
+            return;
+        }
+
+        await new Promise((resolve) => setTimeout(resolve, FLOOD_ALERT_POLL_INTERVAL_MS));
+    }
+}
+
 async function runProcess() {
     let url;
     if (processType === "basin_download") {
@@ -46,45 +100,22 @@ async function runProcess() {
         }
         
 
+        if (processType === "flood_alert") {
+            // The background job has been started (or was already running).
+            // Poll the status endpoint and redirect to results when it finishes,
+            if (data.status === "success" || data.status === "running") {
+                await pollFloodAlertStatus();
+            } else {
+                showError(data.message || "Flood alert generation failed.");
+            }
+            return;
+        }
+
         if (data.status === "success") {
-            let resultUrl;
             if (processType === "basin_download") {
                 window.location.href = DOWNLOAD_PROCESS_BASE_URL + state + "/";
             } else if (processType === "zarr_download") {
                 window.location.href = DOWNLOAD_PROCESS_BASE_URL + state + "/" + gageId + "/";
-            } else if (processType === "flood_alert") {
-                resultUrl = BASE_URL + "flood-alert/run/";
-                const form = document.createElement("form");
-                form.method = "POST";
-                form.action = resultUrl;
-
-                const csrfInput = document.createElement("input");
-                csrfInput.type = "hidden";
-                csrfInput.name = "csrfmiddlewaretoken";
-                csrfInput.value = csrfToken;
-                form.appendChild(csrfInput);
-
-                const runIdInput = document.createElement("input");
-                runIdInput.type = "hidden";
-                runIdInput.name = "run_id";
-                runIdInput.value = runId;
-                form.appendChild(runIdInput);
-
-                const stateInput = document.createElement("input");
-                stateInput.type = "hidden";
-                stateInput.name = "state";
-                stateInput.value = state;
-                form.appendChild(stateInput);
-
-                const workersInput = document.createElement("input");
-                workersInput.type = "hidden";
-                workersInput.name = "workers";
-                workersInput.value = workers;
-                form.appendChild(workersInput);
-
-                document.body.appendChild(form);
-                form.submit();
-                return;
             }
         } else {
             if (res.status === 404) {

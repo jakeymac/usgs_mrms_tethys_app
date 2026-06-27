@@ -182,3 +182,28 @@ def run_flood_alert_pipeline(
             "out_dir": str(run_dir),
         },
     }
+
+def run_flood_alert_pipeline_background(base_dir, state, start_dt, end_dt, workers, lock_fp, done_fp):
+    print(f"[BG] start; lock={lock_fp} done={done_fp}", flush=True)
+    print(f"[BG] lock exists at entry: {lock_fp.exists()}", flush=True)
+    try:
+        result = run_flood_alert_pipeline(
+            base_dir=base_dir,
+            state=state,
+            start=start_dt,
+            end=end_dt,
+            workers=workers,
+        )
+        print(f"[BG] pipeline run_dir={result['run_dir']}", flush=True)
+        print(f"[BG] done_fp dir ={done_fp.parent}", flush=True)
+        done_fp.write_text("done\n", encoding="utf-8")
+        print(f"[BG] wrote done: {done_fp.exists()}", flush=True)
+
+
+    except Exception as e:
+        print(f"Flood alert pipeline failed: {e}")
+    finally:
+        try:
+            lock_fp.unlink(missing_ok=True)
+        except Exception as e:
+            print(f"Failed to remove lock file: {e}")

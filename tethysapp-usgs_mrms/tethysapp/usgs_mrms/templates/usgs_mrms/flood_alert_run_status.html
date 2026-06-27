@@ -34,7 +34,7 @@
       {% else %}
       <div class="card shadow-sm border-0">
         <div class="card-body p-4">
-          <h2 class="mb-3 text-danger">Flood Alert Failed</h2>
+          <h2 class="mb-3 text-danger">Flood Alert Running</h2>
 
           <table class="table table-bordered">
             <tr><th>State</th><td>{{ state }}</td></tr>
@@ -43,7 +43,7 @@
             <tr><th>Workers</th><td>{{ workers }}</td></tr>
           </table>
 
-          <pre class="bg-light p-3 border rounded">{{ error_message }}</pre>
+          <pre class="bg-light p-3 border rounded">{{ message }}</pre>
         </div>
       </div>
       {% endif %}

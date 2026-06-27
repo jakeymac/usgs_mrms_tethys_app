@@ -2,13 +2,14 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+import threading
 
 import pandas as pd
 from django.http import JsonResponse
 from tethys_sdk.routing import controller
 
 from ..app import App
-from ..utils.flood_alert_utils import build_run_id, get_times_from_run_id, run_flood_alert_pipeline
+from ..utils.flood_alert_utils import build_run_id, get_times_from_run_id, run_flood_alert_pipeline_background
 
 
 STATES = [
@@ -154,31 +155,27 @@ def do_run_flood_alert(request, app_media):
 
     lock_fp = run_dir / ".running.lock"
     done_fp = run_dir / ".done"
+    
+    if lock_fp.exists():
+        return JsonResponse({"status": "running", "message": "Run already in progress"})
+
     try:
         run_dir.mkdir(parents=True, exist_ok=True)
         lock_fp.write_text("running\n", encoding="utf-8")
-        
-        run_flood_alert_pipeline(
-            base_dir=base_dir,
-            state=state,
-            start=start_dt,
-            end=end_dt,
-            workers=workers,
-        )
-
-        done_fp.write_text("done\n", encoding="utf-8")
-
-        return JsonResponse({"status": "success"})
     
-
     except Exception as e:
         return JsonResponse({"status": "error", "message": str(e)})
+        
+    thread = threading.Thread(
+        target = run_flood_alert_pipeline_background,
+        args= (base_dir, state, start_dt, end_dt, workers, lock_fp, done_fp),
+        daemon = True
+    )
 
-    finally:
-        try:
-            lock_fp.unlink(missing_ok=True)
-        except Exception:
-            return JsonResponse({"status": "error", "message": f"Failed to remove lock file: {lock_fp}"}, status=500)
+    thread.start()
+
+    return JsonResponse({"status": "success"})
+    
 
 
 @controller(name="run_flood_alert", url="flood-alert/run/", app_media=True)
@@ -203,9 +200,9 @@ def run_flood_alert(request, app_media):
 
     if lock_fp.exists():
         context = {
-            "status": "error",
-            "error_message": (
-                f"This Flood Alert run is already running: {state} / {run_id}. "
+            "status": "running",
+            "message": (
+                f"This Flood Alert run is already running: {state} / {run_id}. \n"
                 "Please wait until it finishes instead of submitting it again."
             ),
             "state": state,
@@ -236,8 +233,20 @@ def run_flood_alert(request, app_media):
     }
     return App.render(request, "processing.html", context)
     
-        
+@controller(name="flood_alert_status", url="flood-alert/status/{state}/{run_id}/", app_media=True)
+def flood_alert_status(request, state, run_id, app_media):
+    base_dir = Path(app_media.path)
+    state = state.upper()
 
+    run_dir = base_dir / "flood_alert_runs" / state / run_id
+    lock_fp = run_dir / ".running.lock"
+    done_fp = run_dir / ".done"
+
+    if lock_fp.exists():
+        return JsonResponse({"status": "running", "message": "Run is currently in progress."})
+    if done_fp.exists():
+        return JsonResponse({"status": "done", "message": "Run has completed successfully."})
+    return JsonResponse({"status": "not_found", "message": "Run not found."})
 
 @controller(
     name="flood_alert_results",

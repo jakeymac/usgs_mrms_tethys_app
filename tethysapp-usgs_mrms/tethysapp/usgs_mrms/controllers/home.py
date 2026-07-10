@@ -223,7 +223,7 @@ class StateBasinMapLayout(MapLayout):
 
     def build_map_extent_and_view(self, request, *args, **kwargs):
         state_extents_file = (
-            Path(__file__).parent / "../state_map_extents/state_extents.json"
+            Path(__file__).parent.parent / "state_map_extents" / "state_extents.json"
         )
 
         state_extents_json = json.load(state_extents_file.open())

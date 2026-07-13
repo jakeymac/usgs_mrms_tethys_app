@@ -184,6 +184,9 @@
       <div id="map"></div>
     </div>
   </div>
+  {{ valid_time_indices|json_script:"valid-time-indices" }}
+  {{ valid_times_iso|json_script:"valid-times-iso" }}
+
 {% endblock %}
 
 {% block scripts %}
@@ -193,6 +196,8 @@
     crossorigin=""
   ></script>
 
+
+  
   <script>
     window.addEventListener("load", () => {
       const temporalTileTemplate = "{{ tile_url_template|escapejs }}/";
@@ -208,8 +213,8 @@
       const sliderMax = Number("{{ slider_max }}");
       const initialSliderIndex = Number("{{ slider_t0 }}");
 
-      const validTimeIndices = JSON.parse('{{ valid_time_indices_json|escapejs }}');
-      const validTimesIso = JSON.parse('{{ valid_times_iso_json|escapejs }}');
+      const validTimeIndices = JSON.parse(document.getElementById("valid-time-indices").textContent);
+      const validTimesIso = JSON.parse(document.getElementById("valid-times-iso").textContent);
 
       const west = Number("{{ west|default:'' }}");
       const south = Number("{{ south|default:'' }}");
@@ -378,6 +383,7 @@
       };
 
       const applyTemporalStep = async (sliderIndex) => {
+        console.log(currentSliderIndex);
         currentSliderIndex = clampSliderIndex(sliderIndex);
         currentActualTimeIndex = actualTimeIndex(currentSliderIndex);
 

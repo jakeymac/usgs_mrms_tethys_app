@@ -104,44 +104,67 @@ def download_basin_geojson_files(state_name, destination_path):
 
 
 def download_zarr_file(state_name, gage_id, destination_path):
-    first_folder = gage_id[:2]
-    second_folder = gage_id[:4]
-    bucket = get_bucket()
-
-    zarr_prefix = f"rain_zarr/{state_name}/{first_folder}/{second_folder}/{gage_id}.zarr"
-
     dest = f"{destination_path}/zarr_files"
-    local_zarr_path = os.path.join(dest, f"{gage_id}.zarr")
-
+    print("This is the download util file destination: ", dest)
     os.makedirs(dest, exist_ok=True)
 
-    if os.path.exists(local_zarr_path):
-        return
+    done_path = os.path.join(dest, f".{gage_id}.done")
+    running_path = os.path.join(dest, f".{gage_id}.running")
+    try:
+        first_folder = gage_id[:2]
+        second_folder = gage_id[:4]
+        bucket = get_bucket()
 
-    existing_files = os.listdir(dest)
+        zarr_prefix = f"rain_zarr/{state_name}/{first_folder}/{second_folder}/{gage_id}.zarr"
 
-    if len(existing_files) >= 5:
-        oldest_file = min(
-            existing_files,
-            key=lambda f: os.path.getctime(os.path.join(dest, f)),
-        )
-        shutil.rmtree(os.path.join(dest, oldest_file))
+        local_zarr_path = os.path.join(dest, f"{gage_id}.zarr")
 
-    objects = list(bucket.objects.filter(Prefix=zarr_prefix))
+        if os.path.exists(local_zarr_path):
+            Path(done_path).touch()
+            return
+        
+        existing_files = [f for f in os.listdir(dest) if f.endswith(".zarr")]
 
-    if len(objects) == 0:
-        raise FileNotFoundError(
-            f"No Zarr files found in S3 for {gage_id} with prefix {zarr_prefix}"
-        )
+        if len(existing_files) >= 5:
+            oldest_file = min(
+                existing_files,
+                key=lambda f: os.path.getctime(os.path.join(dest, f)),
+            )
+            # Get rid of the .zarr file and any .done, .running files left behind.
+            stem = Path(oldest_file).stem
+            for f in os.listdir(dest):
+                if Path(f).stem == stem:
+                    if os.path.isdir(os.path.join(dest, f)):
+                        shutil.rmtree(os.path.join(dest, f))
+                    else:
+                        os.remove(os.path.join(dest, f))
+            
 
-    download_jobs = []
 
-    for obj in objects:
-        relative_path = os.path.relpath(obj.key, os.path.dirname(zarr_prefix))
-        local_file_path = os.path.join(dest, relative_path)
-        download_jobs.append((obj.key, local_file_path))
+        objects = list(bucket.objects.filter(Prefix=zarr_prefix))
 
-    _download_files_parallel(download_jobs)
+        if len(objects) == 0:
+            raise FileNotFoundError(
+                f"No Zarr files found in S3 for {gage_id} with prefix {zarr_prefix}"
+            )
+
+        download_jobs = []
+
+        for obj in objects:
+            relative_path = os.path.relpath(obj.key, os.path.dirname(zarr_prefix))
+            local_file_path = os.path.join(dest, relative_path)
+            download_jobs.append((obj.key, local_file_path))
+
+        _download_files_parallel(download_jobs)
+        print("Reached after downloading Zarr files...")
+        Path(done_path).touch()
+    
+    except Exception as e:
+        print(f"Failed to download Zarr file for {gage_id}: {e}", flush=True)
+        
+    finally:
+        if os.path.exists(running_path):
+            os.remove(running_path)
     
 def download_s3_prefix_jsons(
     *,

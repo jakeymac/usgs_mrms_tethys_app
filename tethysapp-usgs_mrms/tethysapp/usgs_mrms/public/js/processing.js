@@ -8,7 +8,6 @@ const PROCESS_URLS = {
 
 const DOWNLOAD_PROCESS_BASE_URL = BASE_URL + "basin/";
 const FLOOD_ALERT_PROCESS_BASE_URL = BASE_URL + "flood-alert/";
-// const FLOOD_ALERT_RESULT_BASE_UR
 
 const DOWNLOAD_PROCESS_PREVIOUS_BASE_URL = BASE_URL + "/basin/";
 
@@ -19,7 +18,7 @@ let runId;
 let workers;
 let processType;
 
-const FLOOD_ALERT_POLL_INTERVAL_MS = 3000;
+const poll_interval = 3000;
 
 function submitToRunFloodAlert() {
     const form = document.createElement("form");
@@ -69,7 +68,39 @@ async function pollFloodAlertStatus() {
             return;
         }
 
-        await new Promise((resolve) => setTimeout(resolve, FLOOD_ALERT_POLL_INTERVAL_MS));
+        await new Promise((resolve) => setTimeout(resolve, poll_interval));
+    }
+}
+
+async function pollZarrStatus() {
+    const url = BASE_URL + "zarr_status/" + gageId + "/";
+
+    while (true) {
+        let data;
+        try {
+            const res = await fetch(url, { method: "GET", headers: { "X-CSRFToken": csrfToken } });
+            data = await res.json();
+        } catch (err) {
+            showError("Lost connection while checking download status.");
+            return;
+        }
+
+        if (data.status === "success") {
+            window.location.href = DOWNLOAD_PROCESS_BASE_URL + state + "/" + gageId + "/";
+            return;
+        }
+
+        if (data.status === "error") {
+            showError(data.message || "Download failed.");
+            return;
+        }
+
+        if (data.status === "idle") {
+            showError("There was an issue downloading the necessary data. Please try again.");
+            return;
+        }
+
+        await new Promise((resolve) => setTimeout(resolve, poll_interval));
     }
 }
 
@@ -109,6 +140,15 @@ async function runProcess() {
                 showError(data.message || "Flood alert generation failed.");
             }
             return;
+        } else if (processType === "zarr_download") {
+            if (data.status === "success") {
+                // cached, no need to run download, go straight to page
+                window.location.href = DOWNLOAD_PROCESS_BASE_URL + state + "/" + gageId + "/";
+            } else if (data.status === "running") {
+                await pollZarrStatus();
+            } else {
+                showError('No data could be found for the specified gage ID. Try again later.');
+            }
         }
 
         if (data.status === "success") {

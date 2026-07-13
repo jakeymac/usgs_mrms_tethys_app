@@ -3,6 +3,7 @@ import json
 from pathlib import Path
 import shutil
 from concurrent.futures import ThreadPoolExecutor, as_completed
+import threading
 
 from django.http import JsonResponse
 from django.shortcuts import redirect
@@ -141,6 +142,16 @@ def do_download_basin(request, state, app_media):
             {"status": "error", "message": str(e)},
             status=500,
         )
+    
+@controller(name="zarr_status_endpoint", url="zarr_status/{gage_id}/", app_media=True)
+def zarr_status(request, gage_id, app_media):
+    base = os.path.join(app_media.path, "zarr_files")
+    if os.path.exists(os.path.join(base, f"{gage_id}.zarr")) or \
+       os.path.exists(os.path.join(base, f".{gage_id}.done")):
+        return JsonResponse({"status": "success"})   
+    if os.path.exists(os.path.join(base, f".{gage_id}.running")):
+        return JsonResponse({"status": "running"})
+    return JsonResponse({"status": "idle"})
 
 
 @controller(name="download_zarr", url="download_zarr/{state}/{gage_id}/")
@@ -164,23 +175,26 @@ def download_zarr(request, state, gage_id):
 )
 def do_download_zarr(request, state, gage_id, app_media):
     state = state.upper()
+    base_dir = os.path.join(app_media.path, "zarr_files")
+    os.makedirs(base_dir, exist_ok=True)
+    zarr_path = os.path.join(base_dir, f"{gage_id}.zarr")
+    running_path = os.path.join(base_dir, f".{gage_id}.running")
 
-    try:
-        download_zarr_file(state, gage_id, app_media.path)
-
+    if os.path.exists(zarr_path):
         return JsonResponse({"status": "success"})
+    if os.path.exists(running_path):
+        return JsonResponse({"status": "running"})
+    
 
-    except FileNotFoundError as e:
-        return JsonResponse(
-            {"status": "error", "message": str(e)},
-            status=404,
-        )
+    Path(running_path).touch()
 
-    except Exception as e:
-        return JsonResponse(
-            {"status": "error", "message": str(e)},
-            status=500,
-        )
+    threading.Thread(
+        target=download_zarr_file,
+        args=(state, gage_id, app_media.path),
+        daemon=True
+    ).start()
+
+    return JsonResponse({"status": "running"})
 
 
 @controller(name="state_basin", url="basin/{state}/", app_media=True)
@@ -330,8 +344,8 @@ def leaflet_mrms(request, state, gage_id, app_media):
         "recurrence_value_url": f"/apps/usgs-mrms/mrms/recurrence/value_at/{gage_id}",
         "slider_t0": slider_t0,
         "slider_max": slider_max,
-        "valid_time_indices_json": json.dumps(valid_time_indices),
-        "valid_times_iso_json": json.dumps(valid_times_iso),
+        "valid_time_indices": valid_time_indices,
+        "valid_times_iso": valid_times_iso,
         "west": meta["west"],
         "south": meta["south"],
         "east": meta["east"],

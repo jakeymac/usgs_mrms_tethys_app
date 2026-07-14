@@ -146,8 +146,7 @@ def do_download_basin(request, state, app_media):
 @controller(name="zarr_status_endpoint", url="zarr_status/{gage_id}/", app_media=True)
 def zarr_status(request, gage_id, app_media):
     base = os.path.join(app_media.path, "zarr_files")
-    if os.path.exists(os.path.join(base, f"{gage_id}.zarr")) or \
-       os.path.exists(os.path.join(base, f".{gage_id}.done")):
+    if os.path.exists(os.path.join(base, f".{gage_id}.done")):
         return JsonResponse({"status": "success"})   
     if os.path.exists(os.path.join(base, f".{gage_id}.running")):
         return JsonResponse({"status": "running"})
